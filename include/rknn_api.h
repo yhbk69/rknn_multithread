@@ -21,76 +21,75 @@ extern "C" {
 #include <stdint.h>
 
 /*
-    Definition of extended flag for rknn_init.
+    rknn_init 扩展标志定义
 */
-/* set high priority context. */
+/* 设置高优先级上下文 */
 #define RKNN_FLAG_PRIOR_HIGH                    0x00000000
 
-/* set medium priority context */
+/* 设置中优先级上下文 */
 #define RKNN_FLAG_PRIOR_MEDIUM                  0x00000001
 
-/* set low priority context. */
+/* 设置低优先级上下文 */
 #define RKNN_FLAG_PRIOR_LOW                     0x00000002
 
-/* asynchronous mode.
-   when enable, rknn_outputs_get will not block for too long because it directly retrieves the result of
-   the previous frame which can increase the frame rate on single-threaded mode, but at the cost of
-   rknn_outputs_get not retrieves the result of the current frame.
-   in multi-threaded mode you do not need to turn this mode on. */
+/* 异步模式。
+   启用后 rknn_outputs_get 不会长时间阻塞，因为它直接获取上一帧的结果，
+   可以在单线程模式下提高帧率，但代价是 rknn_outputs_get 获取的不是当前帧的结果。
+   在多线程模式下无需开启此模式。 */
 #define RKNN_FLAG_ASYNC_MASK                    0x00000004
 
-/* collect performance mode.
-   when enable, you can get detailed performance reports via rknn_query(ctx, RKNN_QUERY_PERF_DETAIL, ...),
-   but it will reduce the frame rate. */
+/* 性能采集模式。
+   启用后可通过 rknn_query(ctx, RKNN_QUERY_PERF_DETAIL, ...) 获取详细性能报告，
+   但会降低帧率。 */
 #define RKNN_FLAG_COLLECT_PERF_MASK             0x00000008
 
-/* allocate all memory in outside, includes weight/internal/inputs/outputs */
+/* 在外部分配所有内存，包括权重/内部/输入/输出 */
 #define RKNN_FLAG_MEM_ALLOC_OUTSIDE             0x00000010
 
-/* weight sharing with the same network structure */
+/* 相同网络结构间共享权重 */
 #define RKNN_FLAG_SHARE_WEIGHT_MEM              0x00000020
 
-/* send fence fd from outside */
+/* 从外部传入 fence 文件描述符 */
 #define RKNN_FLAG_FENCE_IN_OUTSIDE              0x00000040
 
-/* get fence fd from inside */
+/* 从内部获取 fence 文件描述符 */
 #define RKNN_FLAG_FENCE_OUT_OUTSIDE             0x00000080
 
-/* dummy init flag: could only get total_weight_size and total_internal_size by rknn_query*/
+/* 虚拟初始化标志：仅可通过 rknn_query 获取权重总大小和内部内存总大小*/
 #define RKNN_FLAG_COLLECT_MODEL_INFO_ONLY       0x00000100
 
-/* set GPU as the preferred execution backend When the operator is not supported by the NPU */
+/* 当算子不被 NPU 支持时，设置 GPU 为首选执行后端 */
 #define RKNN_FLAG_EXECUTE_FALLBACK_PRIOR_DEVICE_GPU 0x00000400
 
-/* allocate internal memory in outside */
+/* 在外部分配内部内存 */
 #define RKNN_FLAG_INTERNAL_ALLOC_OUTSIDE        0x00000200
 
 /*
-    Error code returned by the RKNN API.
+    RKNN API 返回的错误码
 */
-#define RKNN_SUCC                               0       /* execute succeed. */
-#define RKNN_ERR_FAIL                           -1      /* execute failed. */
-#define RKNN_ERR_TIMEOUT                        -2      /* execute timeout. */
-#define RKNN_ERR_DEVICE_UNAVAILABLE             -3      /* device is unavailable. */
-#define RKNN_ERR_MALLOC_FAIL                    -4      /* memory malloc fail. */
-#define RKNN_ERR_PARAM_INVALID                  -5      /* parameter is invalid. */
-#define RKNN_ERR_MODEL_INVALID                  -6      /* model is invalid. */
-#define RKNN_ERR_CTX_INVALID                    -7      /* context is invalid. */
-#define RKNN_ERR_INPUT_INVALID                  -8      /* input is invalid. */
-#define RKNN_ERR_OUTPUT_INVALID                 -9      /* output is invalid. */
-#define RKNN_ERR_DEVICE_UNMATCH                 -10     /* the device is unmatch, please update rknn sdk
-                                                           and npu driver/firmware. */
-#define RKNN_ERR_INCOMPATILE_PRE_COMPILE_MODEL  -11     /* This RKNN model use pre_compile mode, but not compatible with current driver. */
-#define RKNN_ERR_INCOMPATILE_OPTIMIZATION_LEVEL_VERSION  -12     /* This RKNN model set optimization level, but not compatible with current driver. */
-#define RKNN_ERR_TARGET_PLATFORM_UNMATCH        -13     /* This RKNN model set target platform, but not compatible with current platform. */
+#define RKNN_SUCC                               0       /* 执行成功 */
+#define RKNN_ERR_FAIL                           -1      /* 执行失败 */
+#define RKNN_ERR_TIMEOUT                        -2      /* 执行超时 */
+#define RKNN_ERR_DEVICE_UNAVAILABLE             -3      /* 设备不可用 */
+#define RKNN_ERR_MALLOC_FAIL                    -4      /* 内存分配失败 */
+#define RKNN_ERR_PARAM_INVALID                  -5      /* 参数无效 */
+#define RKNN_ERR_MODEL_INVALID                  -6      /* 模型无效 */
+#define RKNN_ERR_CTX_INVALID                    -7      /* 上下文无效 */
+#define RKNN_ERR_INPUT_INVALID                  -8      /* 输入无效 */
+#define RKNN_ERR_OUTPUT_INVALID                 -9      /* 输出无效 */
+#define RKNN_ERR_DEVICE_UNMATCH                 -10     /* 设备不匹配，请更新 rknn sdk
+                                                           和 npu 驱动/固件 */
+#define RKNN_ERR_INCOMPATILE_PRE_COMPILE_MODEL  -11     /* 此 RKNN 模型使用预编译模式，但与当前驱动不兼容 */
+#define RKNN_ERR_INCOMPATILE_OPTIMIZATION_LEVEL_VERSION  -12     /* 此 RKNN 模型设置了优化等级，但与当前驱动不兼容 */
+#define RKNN_ERR_TARGET_PLATFORM_UNMATCH        -13     /* 此 RKNN 模型设置了目标平台，但与当前平台不兼容 */
 
 /*
-    Definition for tensor
+    张量定义
 */
-#define RKNN_MAX_DIMS                           16      /* maximum dimension of tensor. */
-#define RKNN_MAX_NUM_CHANNEL                    15      /* maximum channel number of input tensor. */
-#define RKNN_MAX_NAME_LEN                       256     /* maximum name lenth of tensor. */
-#define RKNN_MAX_DYNAMIC_SHAPE_NUM              512     /* maximum number of dynamic shape for each input. */
+#define RKNN_MAX_DIMS                           16      /* 张量最大维度数 */
+#define RKNN_MAX_NUM_CHANNEL                    15      /* 输入张量最大通道数 */
+#define RKNN_MAX_NAME_LEN                       256     /* 张量名称最大长度 */
+#define RKNN_MAX_DYNAMIC_SHAPE_NUM              512     /* 每个输入的最大动态形状数量 */
 
 #ifdef __arm__
 typedef uint32_t rknn_context;
@@ -100,57 +99,57 @@ typedef uint64_t rknn_context;
 
 
 /*
-    The query command for rknn_query
+    rknn_query 查询命令
 */
 typedef enum _rknn_query_cmd {
-    RKNN_QUERY_IN_OUT_NUM = 0,                              /* query the number of input & output tensor. */
-    RKNN_QUERY_INPUT_ATTR = 1,                              /* query the attribute of input tensor. */
-    RKNN_QUERY_OUTPUT_ATTR = 2,                             /* query the attribute of output tensor. */
-    RKNN_QUERY_PERF_DETAIL = 3,                             /* query the detail performance, need set
-                                                               RKNN_FLAG_COLLECT_PERF_MASK when call rknn_init,
-                                                               this query needs to be valid after rknn_outputs_get. */
-    RKNN_QUERY_PERF_RUN = 4,                                /* query the time of run,
-                                                               this query needs to be valid after rknn_outputs_get. */
-    RKNN_QUERY_SDK_VERSION = 5,                             /* query the sdk & driver version */
+    RKNN_QUERY_IN_OUT_NUM = 0,                              /* 查询输入和输出张量的数量 */
+    RKNN_QUERY_INPUT_ATTR = 1,                              /* 查询输入张量的属性 */
+    RKNN_QUERY_OUTPUT_ATTR = 2,                             /* 查询输出张量的属性 */
+    RKNN_QUERY_PERF_DETAIL = 3,                             /* 查询详细性能，需要在 rknn_init 调用时设置
+                                                               RKNN_FLAG_COLLECT_PERF_MASK，
+                                                               此查询需要在 rknn_outputs_get 之后才有效 */
+    RKNN_QUERY_PERF_RUN = 4,                                /* 查询运行时间，
+                                                               此查询需要在 rknn_outputs_get 之后才有效 */
+    RKNN_QUERY_SDK_VERSION = 5,                             /* 查询 sdk 和驱动版本 */
 
-    RKNN_QUERY_MEM_SIZE = 6,                                /* query the weight & internal memory size */
-    RKNN_QUERY_CUSTOM_STRING = 7,                           /* query the custom string */
+    RKNN_QUERY_MEM_SIZE = 6,                                /* 查询权重和内部内存大小 */
+    RKNN_QUERY_CUSTOM_STRING = 7,                           /* 查询自定义字符串 */
 
-    RKNN_QUERY_NATIVE_INPUT_ATTR = 8,                       /* query the attribute of native input tensor. */
-    RKNN_QUERY_NATIVE_OUTPUT_ATTR = 9,                      /* query the attribute of native output tensor. */
+    RKNN_QUERY_NATIVE_INPUT_ATTR = 8,                       /* 查询原始输入张量的属性 */
+    RKNN_QUERY_NATIVE_OUTPUT_ATTR = 9,                      /* 查询原始输出张量的属性 */
 
-    RKNN_QUERY_NATIVE_NC1HWC2_INPUT_ATTR = 8,               /* query the attribute of native input tensor. */
-    RKNN_QUERY_NATIVE_NC1HWC2_OUTPUT_ATTR = 9,              /* query the attribute of native output tensor. */
+    RKNN_QUERY_NATIVE_NC1HWC2_INPUT_ATTR = 8,               /* 查询原始输入张量的属性 */
+    RKNN_QUERY_NATIVE_NC1HWC2_OUTPUT_ATTR = 9,              /* 查询原始输出张量的属性 */
 
-    RKNN_QUERY_NATIVE_NHWC_INPUT_ATTR = 10,                 /* query the attribute of native input tensor. */
-    RKNN_QUERY_NATIVE_NHWC_OUTPUT_ATTR = 11,                /* query the attribute of native output tensor. */
+    RKNN_QUERY_NATIVE_NHWC_INPUT_ATTR = 10,                 /* 查询原始输入张量的属性 */
+    RKNN_QUERY_NATIVE_NHWC_OUTPUT_ATTR = 11,                /* 查询原始输出张量的属性 */
 
-    RKNN_QUERY_DEVICE_MEM_INFO = 12,                        /* query the attribute of rknn memory information. */
+    RKNN_QUERY_DEVICE_MEM_INFO = 12,                        /* 查询 rknn 内存信息属性 */
 
-    RKNN_QUERY_INPUT_DYNAMIC_RANGE = 13,                    /* query the dynamic shape range of rknn input tensor. */
-    RKNN_QUERY_CURRENT_INPUT_ATTR = 14,                     /* query the current shape of rknn input tensor, only valid for dynamic rknn model*/
-    RKNN_QUERY_CURRENT_OUTPUT_ATTR = 15,                    /* query the current shape of rknn output tensor, only valid for dynamic rknn model*/
+    RKNN_QUERY_INPUT_DYNAMIC_RANGE = 13,                    /* 查询 rknn 输入张量的动态形状范围 */
+    RKNN_QUERY_CURRENT_INPUT_ATTR = 14,                     /* 查询 rknn 输入张量的当前形状，仅对动态 rknn 模型有效*/
+    RKNN_QUERY_CURRENT_OUTPUT_ATTR = 15,                    /* 查询 rknn 输出张量的当前形状，仅对动态 rknn 模型有效*/
 
-    RKNN_QUERY_CURRENT_NATIVE_INPUT_ATTR = 16,              /* query the current native shape of rknn input tensor, only valid for dynamic rknn model*/
-    RKNN_QUERY_CURRENT_NATIVE_OUTPUT_ATTR = 17,             /* query the current native shape of rknn output tensor, only valid for dynamic rknn model*/
+    RKNN_QUERY_CURRENT_NATIVE_INPUT_ATTR = 16,              /* 查询 rknn 输入张量的当前原始形状，仅对动态 rknn 模型有效*/
+    RKNN_QUERY_CURRENT_NATIVE_OUTPUT_ATTR = 17,             /* 查询 rknn 输出张量的当前原始形状，仅对动态 rknn 模型有效*/
 
 
     RKNN_QUERY_CMD_MAX
 } rknn_query_cmd;
 
 /*
-    the tensor data type.
+    张量数据类型
 */
 typedef enum _rknn_tensor_type {
-    RKNN_TENSOR_FLOAT32 = 0,                            /* data type is float32. */
-    RKNN_TENSOR_FLOAT16,                                /* data type is float16. */
-    RKNN_TENSOR_INT8,                                   /* data type is int8. */
-    RKNN_TENSOR_UINT8,                                  /* data type is uint8. */
-    RKNN_TENSOR_INT16,                                  /* data type is int16. */
-    RKNN_TENSOR_UINT16,                                 /* data type is uint16. */
-    RKNN_TENSOR_INT32,                                  /* data type is int32. */
-    RKNN_TENSOR_UINT32,                                 /* data type is uint32. */
-    RKNN_TENSOR_INT64,                                  /* data type is int64. */
+    RKNN_TENSOR_FLOAT32 = 0,                            /* 数据类型为 float32 */
+    RKNN_TENSOR_FLOAT16,                                /* 数据类型为 float16 */
+    RKNN_TENSOR_INT8,                                   /* 数据类型为 int8 */
+    RKNN_TENSOR_UINT8,                                  /* 数据类型为 uint8 */
+    RKNN_TENSOR_INT16,                                  /* 数据类型为 int16 */
+    RKNN_TENSOR_UINT16,                                 /* 数据类型为 uint16 */
+    RKNN_TENSOR_INT32,                                  /* 数据类型为 int32 */
+    RKNN_TENSOR_UINT32,                                 /* 数据类型为 uint32 */
+    RKNN_TENSOR_INT64,                                  /* 数据类型为 int64 */
     RKNN_TENSOR_BOOL,
 
     RKNN_TENSOR_TYPE_MAX
@@ -174,12 +173,12 @@ inline static const char* get_type_string(rknn_tensor_type type)
 }
 
 /*
-    the quantitative type.
+    量化类型
 */
 typedef enum _rknn_tensor_qnt_type {
-    RKNN_TENSOR_QNT_NONE = 0,                           /* none. */
-    RKNN_TENSOR_QNT_DFP,                                /* dynamic fixed point. */
-    RKNN_TENSOR_QNT_AFFINE_ASYMMETRIC,                  /* asymmetric affine. */
+    RKNN_TENSOR_QNT_NONE = 0,                           /* 无 */
+    RKNN_TENSOR_QNT_DFP,                                /* 动态定点 */
+    RKNN_TENSOR_QNT_AFFINE_ASYMMETRIC,                  /* 非对称仿射 */
 
     RKNN_TENSOR_QNT_MAX
 } rknn_tensor_qnt_type;
@@ -195,27 +194,27 @@ inline static const char* get_qnt_type_string(rknn_tensor_qnt_type type)
 }
 
 /*
-    the tensor data format.
+    张量数据格式
 */
 typedef enum _rknn_tensor_format {
-    RKNN_TENSOR_NCHW = 0,                               /* data format is NCHW. */
-    RKNN_TENSOR_NHWC,                                   /* data format is NHWC. */
-    RKNN_TENSOR_NC1HWC2,                                /* data format is NC1HWC2. */
+    RKNN_TENSOR_NCHW = 0,                               /* 数据格式为 NCHW */
+    RKNN_TENSOR_NHWC,                                   /* 数据格式为 NHWC */
+    RKNN_TENSOR_NC1HWC2,                                /* 数据格式为 NC1HWC2 */
     RKNN_TENSOR_UNDEFINED,
 
     RKNN_TENSOR_FORMAT_MAX
 } rknn_tensor_format;
 
 /*
-    the mode of running on target NPU core.
+    目标 NPU 核心运行模式
 */
 typedef enum _rknn_core_mask {
-    RKNN_NPU_CORE_AUTO = 0,                                       /* default, run on NPU core randomly. */
-    RKNN_NPU_CORE_0 = 1,                                          /* run on NPU core 0. */
-    RKNN_NPU_CORE_1 = 2,                                          /* run on NPU core 1. */
-    RKNN_NPU_CORE_2 = 4,                                          /* run on NPU core 2. */
-    RKNN_NPU_CORE_0_1 = RKNN_NPU_CORE_0 | RKNN_NPU_CORE_1,        /* run on NPU core 0 and core 1. */
-    RKNN_NPU_CORE_0_1_2 = RKNN_NPU_CORE_0_1 | RKNN_NPU_CORE_2,    /* run on NPU core 0 and core 1 and core 2. */
+    RKNN_NPU_CORE_AUTO = 0,                                       /* 默认，随机运行在 NPU 核心上 */
+    RKNN_NPU_CORE_0 = 1,                                          /* 运行在 NPU 核心 0 上 */
+    RKNN_NPU_CORE_1 = 2,                                          /* 运行在 NPU 核心 1 上 */
+    RKNN_NPU_CORE_2 = 4,                                          /* 运行在 NPU 核心 2 上 */
+    RKNN_NPU_CORE_0_1 = RKNN_NPU_CORE_0 | RKNN_NPU_CORE_1,        /* 运行在 NPU 核心 0 和核心 1 上 */
+    RKNN_NPU_CORE_0_1_2 = RKNN_NPU_CORE_0_1 | RKNN_NPU_CORE_2,    /* 运行在 NPU 核心 0、核心 1 和核心 2 上 */
 
     RKNN_NPU_CORE_UNDEFINED,
 } rknn_core_mask;
@@ -232,484 +231,482 @@ inline static const char* get_format_string(rknn_tensor_format fmt)
 }
 
 /*
-    the information for RKNN_QUERY_IN_OUT_NUM.
+    RKNN_QUERY_IN_OUT_NUM 的信息
 */
 typedef struct _rknn_input_output_num {
-    uint32_t n_input;                                   /* the number of input. */
-    uint32_t n_output;                                  /* the number of output. */
+    uint32_t n_input;                                   /* 输入数量 */
+    uint32_t n_output;                                  /* 输出数量 */
 } rknn_input_output_num;
 
 /*
-    the information for RKNN_QUERY_INPUT_ATTR / RKNN_QUERY_OUTPUT_ATTR.
+    RKNN_QUERY_INPUT_ATTR / RKNN_QUERY_OUTPUT_ATTR 的信息
 */
 typedef struct _rknn_tensor_attr {
-    uint32_t index;                                     /* input parameter, the index of input/output tensor,
-                                                           need set before call rknn_query. */
+    uint32_t index;                                     /* 输入参数，输入/输出张量的索引，
+                                                           需要在调用 rknn_query 前设置 */
 
-    uint32_t n_dims;                                    /* the number of dimensions. */
-    uint32_t dims[RKNN_MAX_DIMS];                       /* the dimensions array. */
-    char name[RKNN_MAX_NAME_LEN];                       /* the name of tensor. */
+    uint32_t n_dims;                                    /* 维度数量 */
+    uint32_t dims[RKNN_MAX_DIMS];                       /* 维度数组 */
+    char name[RKNN_MAX_NAME_LEN];                       /* 张量名称 */
 
-    uint32_t n_elems;                                   /* the number of elements. */
-    uint32_t size;                                      /* the bytes size of tensor. */
+    uint32_t n_elems;                                   /* 元素数量 */
+    uint32_t size;                                      /* 张量的字节大小 */
 
-    rknn_tensor_format fmt;                             /* the data format of tensor. */
-    rknn_tensor_type type;                              /* the data type of tensor. */
-    rknn_tensor_qnt_type qnt_type;                      /* the quantitative type of tensor. */
-    int8_t fl;                                          /* fractional length for RKNN_TENSOR_QNT_DFP. */
-    int32_t zp;                                         /* zero point for RKNN_TENSOR_QNT_AFFINE_ASYMMETRIC. */
-    float scale;                                        /* scale for RKNN_TENSOR_QNT_AFFINE_ASYMMETRIC. */
+    rknn_tensor_format fmt;                             /* 张量的数据格式 */
+    rknn_tensor_type type;                              /* 张量的数据类型 */
+    rknn_tensor_qnt_type qnt_type;                      /* 张量的量化类型 */
+    int8_t fl;                                          /* RKNN_TENSOR_QNT_DFP 的小数长度 */
+    int32_t zp;                                         /* RKNN_TENSOR_QNT_AFFINE_ASYMMETRIC 的零点 */
+    float scale;                                        /* RKNN_TENSOR_QNT_AFFINE_ASYMMETRIC 的缩放因子 */
 
-    uint32_t w_stride;                                  /* the stride of tensor along the width dimention of input,
-                                                           Note: it is read-only, 0 means equal to width. */
-    uint32_t size_with_stride;                          /* the bytes size of tensor with stride. */
+    uint32_t w_stride;                                  /* 张量沿输入宽度维度的步长，
+                                                           注意：此为只读，0 表示等于宽度 */
+    uint32_t size_with_stride;                          /* 带步长的张量字节大小 */
 
-    uint8_t pass_through;                               /* pass through mode, for rknn_set_io_mem interface.
-                                                           if TRUE, the buf data is passed directly to the input node of the rknn model
-                                                                    without any conversion. the following variables do not need to be set.
-                                                           if FALSE, the buf data is converted into an input consistent with the model
-                                                                     according to the following type and fmt. so the following variables
-                                                                     need to be set.*/
-    uint32_t h_stride;                                  /* the stride along the height dimention of input,
-                                                           Note: it is write-only, if it was set to 0, h_stride = height. */
+    uint8_t pass_through;                               /* 直通模式，用于 rknn_set_io_mem 接口。
+                                                           如果为 TRUE，buf 数据直接传递给 rknn 模型的输入节点
+                                                                    无需任何转换。以下变量无需设置。
+                                                           如果为 FALSE，buf 数据将按照以下 type 和 fmt 转换为与模型
+                                                                     一致的输入。因此以下变量需要设置。*/
+    uint32_t h_stride;                                  /* 沿输入高度维度的步长，
+                                                           注意：此为只写，如果设置为 0，h_stride = height。 */
 } rknn_tensor_attr;
 
 typedef struct _rknn_input_range {
-    uint32_t index;                                                 /* input parameter, the index of input/output tensor,
-                                                                        need set before call rknn_query. */
-    uint32_t shape_number;                                          /* the number of shape. */
-    rknn_tensor_format fmt;                                         /* the data format of tensor. */
-    char name[RKNN_MAX_NAME_LEN];                                   /* the name of tensor. */
-    uint32_t dyn_range[RKNN_MAX_DYNAMIC_SHAPE_NUM][RKNN_MAX_DIMS];  /* the dynamic input dimensions range. */
-    uint32_t n_dims;                                                /* the number of dimensions. */
+    uint32_t index;                                                 /* 输入参数，输入/输出张量的索引，
+                                                                        需要在调用 rknn_query 前设置 */
+    uint32_t shape_number;                                          /* 形状数量 */
+    rknn_tensor_format fmt;                                         /* 张量的数据格式 */
+    char name[RKNN_MAX_NAME_LEN];                                   /* 张量名称 */
+    uint32_t dyn_range[RKNN_MAX_DYNAMIC_SHAPE_NUM][RKNN_MAX_DIMS];  /* 动态输入维度范围 */
+    uint32_t n_dims;                                                /* 维度数量 */
 
 } rknn_input_range;
 
 /*
-    the information for RKNN_QUERY_PERF_DETAIL.
+    RKNN_QUERY_PERF_DETAIL 的信息
 */
 typedef struct _rknn_perf_detail {
-    char* perf_data;                                    /* the string pointer of perf detail. don't need free it by user. */
-    uint64_t data_len;                                  /* the string length. */
+    char* perf_data;                                    /* 性能详情的字符串指针，用户无需释放 */
+    uint64_t data_len;                                  /* 字符串长度 */
 } rknn_perf_detail;
 
 /*
-    the information for RKNN_QUERY_PERF_RUN.
+    RKNN_QUERY_PERF_RUN 的信息
 */
 typedef struct _rknn_perf_run {
-    int64_t run_duration;                               /* real inference time (us) */
+    int64_t run_duration;                               /* 实际推理时间（微秒） */
 } rknn_perf_run;
 
 /*
-    the information for RKNN_QUERY_SDK_VERSION.
+    RKNN_QUERY_SDK_VERSION 的信息
 */
 typedef struct _rknn_sdk_version {
-    char api_version[256];                              /* the version of rknn api. */
-    char drv_version[256];                              /* the version of rknn driver. */
+    char api_version[256];                              /* rknn api 的版本 */
+    char drv_version[256];                              /* rknn 驱动的版本 */
 } rknn_sdk_version;
 
 /*
-    the information for RKNN_QUERY_MEM_SIZE.
+    RKNN_QUERY_MEM_SIZE 的信息
 */
 typedef struct _rknn_mem_size {
-    uint32_t total_weight_size;                         /* the weight memory size */
-    uint32_t total_internal_size;                       /* the internal memory size, exclude inputs/outputs */
-    uint64_t total_dma_allocated_size;                  /* total dma memory allocated size */
-    uint32_t total_sram_size;                           /* total system sram size reserved for rknn */
-    uint32_t free_sram_size;                            /* free system sram size reserved for rknn */
-    uint32_t reserved[10];                              /* reserved */
+    uint32_t total_weight_size;                         /* 权重内存大小 */
+    uint32_t total_internal_size;                       /* 内部内存大小，不包括输入/输出 */
+    uint64_t total_dma_allocated_size;                  /* DMA 内存分配总大小 */
+    uint32_t total_sram_size;                           /* 为 rknn 保留的系统 sram 总大小 */
+    uint32_t free_sram_size;                            /* 为 rknn 保留的系统 sram 空闲大小 */
+    uint32_t reserved[10];                              /* 保留 */
 } rknn_mem_size;
 
 /*
-    the information for RKNN_QUERY_CUSTOM_STRING.
+    RKNN_QUERY_CUSTOM_STRING 的信息
 */
 typedef struct _rknn_custom_string {
-    char string[1024];                                  /* the string of custom, lengths max to 1024 bytes */
+    char string[1024];                                  /* 自定义字符串，最大长度 1024 字节 */
 } rknn_custom_string;
 
 /*
-   The flags of rknn_tensor_mem.
+   rknn_tensor_mem 的标志
 */
 typedef enum _rknn_tensor_mem_flags {
-    RKNN_TENSOR_MEMORY_FLAGS_ALLOC_INSIDE = 1,           /*Used to mark in rknn_destroy_mem() whether it is necessary to release the "mem" pointer itself.
-                                                         If the flag RKNN_TENSOR_MEMORY_FLAGS_ALLOC_INSIDE is set, rknn_destroy_mem() will call free(mem).*/
-    RKNN_TENSOR_MEMORY_FLAGS_FROM_FD      = 2,           /*Used to mark in rknn_create_mem_from_fd() whether it is necessary to release the "mem" pointer itself.
-                                                         If the flag RKNN_TENSOR_MEMORY_FLAGS_FROM_FD is set, rknn_destroy_mem() will call free(mem).*/
-    RKNN_TENSOR_MEMORY_FLAGS_FROM_PHYS    = 3,           /*Used to mark in rknn_create_mem_from_phys() whether it is necessary to release the "mem" pointer itself.
-                                                         If the flag RKNN_TENSOR_MEMORY_FLAGS_FROM_PHYS is set, rknn_destroy_mem() will call free(mem).*/
+    RKNN_TENSOR_MEMORY_FLAGS_ALLOC_INSIDE = 1,           /*用于在 rknn_destroy_mem() 中标记是否需要释放 "mem" 指针本身。
+                                                         如果设置了 RKNN_TENSOR_MEMORY_FLAGS_ALLOC_INSIDE 标志，rknn_destroy_mem() 会调用 free(mem)。*/
+    RKNN_TENSOR_MEMORY_FLAGS_FROM_FD      = 2,           /*用于在 rknn_create_mem_from_fd() 中标记是否需要释放 "mem" 指针本身。
+                                                         如果设置了 RKNN_TENSOR_MEMORY_FLAGS_FROM_FD 标志，rknn_destroy_mem() 会调用 free(mem)。*/
+    RKNN_TENSOR_MEMORY_FLAGS_FROM_PHYS    = 3,           /*用于在 rknn_create_mem_from_phys() 中标记是否需要释放 "mem" 指针本身。
+                                                         如果设置了 RKNN_TENSOR_MEMORY_FLAGS_FROM_PHYS 标志，rknn_destroy_mem() 会调用 free(mem)。*/
     RKNN_TENSOR_MEMORY_FLAGS_UNKNOWN
 } rknn_tensor_mem_flags;
 
 /*
-    the memory information of tensor.
+    张量的内存信息
 */
 typedef struct _rknn_tensor_memory {
-    void*            virt_addr;                         /* the virtual address of tensor buffer. */
-    uint64_t         phys_addr;                         /* the physical address of tensor buffer. */
-    int32_t          fd;                                /* the fd of tensor buffer. */
-    int32_t          offset;                            /* indicates the offset of the memory. */
-    uint32_t         size;                              /* the size of tensor buffer. */
-    uint32_t         flags;                             /* the flags of tensor buffer, reserved */
-    void *           priv_data;                         /* the private data of tensor buffer. */
+    void*            virt_addr;                         /* 张量缓冲区的虚拟地址 */
+    uint64_t         phys_addr;                         /* 张量缓冲区的物理地址 */
+    int32_t          fd;                                /* 张量缓冲区的文件描述符 */
+    int32_t          offset;                            /* 表示内存的偏移量 */
+    uint32_t         size;                              /* 张量缓冲区的大小 */
+    uint32_t         flags;                             /* 张量缓冲区的标志，保留 */
+    void *           priv_data;                         /* 张量缓冲区的私有数据 */
 } rknn_tensor_mem;
 
 /*
-    the input information for rknn_input_set.
+    rknn_input_set 的输入信息
 */
 typedef struct _rknn_input {
-    uint32_t index;                                     /* the input index. */
-    void* buf;                                          /* the input buf for index. */
-    uint32_t size;                                      /* the size of input buf. */
-    uint8_t pass_through;                               /* pass through mode.
-                                                           if TRUE, the buf data is passed directly to the input node of the rknn model
-                                                                    without any conversion. the following variables do not need to be set.
-                                                           if FALSE, the buf data is converted into an input consistent with the model
-                                                                     according to the following type and fmt. so the following variables
-                                                                     need to be set.*/
-    rknn_tensor_type type;                              /* the data type of input buf. */
-    rknn_tensor_format fmt;                             /* the data format of input buf.
-                                                           currently the internal input format of NPU is NCHW by default.
-                                                           so entering NCHW data can avoid the format conversion in the driver. */
+    uint32_t index;                                     /* 输入索引 */
+    void* buf;                                          /* 索引对应的输入缓冲区 */
+    uint32_t size;                                      /* 输入缓冲区的大小 */
+    uint8_t pass_through;                               /* 直通模式。
+                                                           如果为 TRUE，buf 数据直接传递给 rknn 模型的输入节点
+                                                                    无需任何转换。以下变量无需设置。
+                                                           如果为 FALSE，buf 数据将按照以下 type 和 fmt 转换为与模型
+                                                                     一致的输入。因此以下变量需要设置。*/
+    rknn_tensor_type type;                              /* 输入缓冲区的数据类型 */
+    rknn_tensor_format fmt;                             /* 输入缓冲区的数据格式。
+                                                           目前 NPU 的内部输入格式默认为 NCHW。
+                                                           因此输入 NCHW 数据可以避免驱动中的格式转换。 */
 } rknn_input;
 
 /*
-    the output information for rknn_outputs_get.
+    rknn_outputs_get 的输出信息
 */
 typedef struct _rknn_output {
-    uint8_t want_float;                                 /* want transfer output data to float */
-    uint8_t is_prealloc;                                /* whether buf is pre-allocated.
-                                                           if TRUE, the following variables need to be set.
-                                                           if FALSE, the following variables do not need to be set. */
-    uint32_t index;                                     /* the output index. */
-    void* buf;                                          /* the output buf for index.
-                                                           when is_prealloc = FALSE and rknn_outputs_release called,
-                                                           this buf pointer will be free and don't use it anymore. */
-    uint32_t size;                                      /* the size of output buf. */
+    uint8_t want_float;                                 /* 是否希望将输出数据转换为 float */
+    uint8_t is_prealloc;                                /* buf 是否预分配。
+                                                           如果为 TRUE，以下变量需要设置。
+                                                           如果为 FALSE，以下变量无需设置。 */
+    uint32_t index;                                     /* 输出索引 */
+    void* buf;                                          /* 索引对应的输出缓冲区。
+                                                           当 is_prealloc = FALSE 且调用了 rknn_outputs_release 时，
+                                                           此 buf 指针将被释放，不可再使用。 */
+    uint32_t size;                                      /* 输出缓冲区的大小 */
 } rknn_output;
 
 /*
-    the extend information for rknn_init.
+    rknn_init 的扩展信息
 */
 typedef struct _rknn_init_extend {
-    rknn_context ctx;                                    /* rknn context */
-    int32_t      real_model_offset;                      /* real rknn model file offset, only valid when init context with rknn file path */
-    uint32_t     real_model_size;                        /* real rknn model file size, only valid when init context with rknn file path */
-    uint8_t      reserved[120];                          /* reserved */
+    rknn_context ctx;                                    /* rknn 上下文 */
+    int32_t      real_model_offset;                      /* 真实 rknn 模型文件偏移，仅在使用 rknn 文件路径初始化上下文时有效 */
+    uint32_t     real_model_size;                        /* 真实 rknn 模型文件大小，仅在使用 rknn 文件路径初始化上下文时有效 */
+    uint8_t      reserved[120];                          /* 保留 */
 } rknn_init_extend;
 
 /*
-    the extend information for rknn_run.
+    rknn_run 的扩展信息
 */
 typedef struct _rknn_run_extend {
-    uint64_t frame_id;                                  /* output parameter, indicate current frame id of run. */
-    int32_t non_block;                                  /* block flag of run, 0 is block else 1 is non block */
-    int32_t timeout_ms;                                 /* timeout for block mode, in milliseconds */
-    int32_t fence_fd;                                   /* fence fd from other unit */
+    uint64_t frame_id;                                  /* 输出参数，指示当前运行的帧 id */
+    int32_t non_block;                                  /* 运行的阻塞标志，0 为阻塞，1 为非阻塞 */
+    int32_t timeout_ms;                                 /* 阻塞模式的超时时间，单位为毫秒 */
+    int32_t fence_fd;                                   /* 来自其他单元的 fence 文件描述符 */
 } rknn_run_extend;
 
 /*
-    the extend information for rknn_outputs_get.
+    rknn_outputs_get 的扩展信息
 */
 typedef struct _rknn_output_extend {
-    uint64_t frame_id;                                  /* output parameter, indicate the frame id of outputs, corresponds to
-                                                           struct rknn_run_extend.frame_id.*/
+    uint64_t frame_id;                                  /* 输出参数，指示输出的帧 id，对应
+                                                           struct rknn_run_extend.frame_id。*/
 } rknn_output_extend;
 
 
 /*  rknn_init
 
-    initial the context and load the rknn model.
+    初始化上下文并加载 rknn 模型。
 
-    input:
-        rknn_context* context       the pointer of context handle.
-        void* model                 if size > 0, pointer to the rknn model, if size = 0, filepath to the rknn model.
-        uint32_t size               the size of rknn model.
-        uint32_t flag               extend flag, see the define of RKNN_FLAG_XXX_XXX.
-        rknn_init_extend* extend    the extend information of init.
-    return:
-        int                         error code.
+    输入:
+        rknn_context* context       上下文句柄的指针。
+        void* model                 如果 size > 0，指向 rknn 模型的指针；如果 size = 0，rknn 模型的文件路径。
+        uint32_t size               rknn 模型的大小。
+        uint32_t flag               扩展标志，参见 RKNN_FLAG_XXX_XXX 的定义。
+        rknn_init_extend* extend    初始化的扩展信息。
+    返回:
+        int                         错误码。
 */
 int rknn_init(rknn_context* context, void* model, uint32_t size, uint32_t flag, rknn_init_extend* extend);
 
 /*  rknn_dup_context
 
-    initial the context and load the rknn model.
+    初始化上下文并加载 rknn 模型。
 
-    input:
-        rknn_context* context_in       the pointer of context in handle.
-        rknn_context* context_out      the pointer of context out handle.
-    return:
-        int                         error code.
+    输入:
+        rknn_context* context_in       输入上下文句柄的指针。
+        rknn_context* context_out      输出上下文句柄的指针。
+    返回:
+        int                         错误码。
 */
 int rknn_dup_context(rknn_context* context_in, rknn_context* context_out);
 
 /*  rknn_destroy
 
-    unload the rknn model and destroy the context.
+    卸载 rknn 模型并销毁上下文。
 
-    input:
-        rknn_context context        the handle of context.
-    return:
-        int                         error code.
+    输入:
+        rknn_context context        上下文句柄。
+    返回:
+        int                         错误码。
 */
 int rknn_destroy(rknn_context context);
 
 
 /*  rknn_query
 
-    query the information about model or others. see rknn_query_cmd.
+    查询模型或其他相关信息。参见 rknn_query_cmd。
 
-    input:
-        rknn_context context        the handle of context.
-        rknn_query_cmd cmd          the command of query.
-        void* info                  the buffer point of information.
-        uint32_t size               the size of information.
-    return:
-        int                         error code.
+    输入:
+        rknn_context context        上下文句柄。
+        rknn_query_cmd cmd          查询命令。
+        void* info                  信息缓冲区指针。
+        uint32_t size               信息的大小。
+    返回:
+        int                         错误码。
 */
 int rknn_query(rknn_context context, rknn_query_cmd cmd, void* info, uint32_t size);
 
 
 /*  rknn_inputs_set
 
-    set inputs information by input index of rknn model.
-    inputs information see rknn_input.
+    通过 rknn 模型的输入索引设置输入信息。
+    输入信息参见 rknn_input。
 
-    input:
-        rknn_context context        the handle of context.
-        uint32_t n_inputs           the number of inputs.
-        rknn_input inputs[]         the arrays of inputs information, see rknn_input.
-    return:
-        int                         error code
+    输入:
+        rknn_context context        上下文句柄。
+        uint32_t n_inputs           输入的数量。
+        rknn_input inputs[]         输入信息的数组，参见 rknn_input。
+    返回:
+        int                         错误码
 */
 int rknn_inputs_set(rknn_context context, uint32_t n_inputs, rknn_input inputs[]);
 
 /*
     rknn_set_batch_core_num
 
-    set rknn batch core_num.
+    设置 rknn 批处理核心数量。
 
-    input:
-        rknn_context context        the handle of context.
-        int core_num                the core number.
-    return:
-        int                         error code.
+    输入:
+        rknn_context context        上下文句柄。
+        int core_num                核心数量。
+    返回:
+        int                         错误码。
 
 */
 int rknn_set_batch_core_num(rknn_context context, int core_num);
 
 /*  rknn_set_core_mask
 
-    set rknn core mask.(only supported on RK3588 now)
+    设置 rknn 核心掩码。（目前仅 RK3588 支持）
 
-    RKNN_NPU_CORE_AUTO: auto mode, default value
-    RKNN_NPU_CORE_0: core 0 mode
-    RKNN_NPU_CORE_1: core 1 mode
-    RKNN_NPU_CORE_2: core 2 mode
-    RKNN_NPU_CORE_0_1: combine core 0/1 mode
-    RKNN_NPU_CORE_0_1_2: combine core 0/1/2 mode
+    RKNN_NPU_CORE_AUTO: 自动模式，默认值
+    RKNN_NPU_CORE_0: 核心 0 模式
+    RKNN_NPU_CORE_1: 核心 1 模式
+    RKNN_NPU_CORE_2: 核心 2 模式
+    RKNN_NPU_CORE_0_1: 组合核心 0/1 模式
+    RKNN_NPU_CORE_0_1_2: 组合核心 0/1/2 模式
 
-    input:
-        rknn_context context        the handle of context.
-        rknn_core_mask core_mask    the core mask.
-    return:
-        int                         error code.
+    输入:
+        rknn_context context        上下文句柄。
+        rknn_core_mask core_mask    核心掩码。
+    返回:
+        int                         错误码。
 */
 int rknn_set_core_mask(rknn_context context, rknn_core_mask core_mask);
 
 /*  rknn_run
 
-    run the model to execute inference.
+    运行模型执行推理。
 
-    input:
-        rknn_context context        the handle of context.
-        rknn_run_extend* extend     the extend information of run.
-    return:
-        int                         error code.
+    输入:
+        rknn_context context        上下文句柄。
+        rknn_run_extend* extend     运行的扩展信息。
+    返回:
+        int                         错误码。
 */
 int rknn_run(rknn_context context, rknn_run_extend* extend);
 
 
 /*  rknn_wait
 
-    wait the model after execute inference.
+    等待模型执行推理完成。
 
-    input:
-        rknn_context context        the handle of context.
-        rknn_run_extend* extend     the extend information of run.
-    return:
-        int                         error code.
+    输入:
+        rknn_context context        上下文句柄。
+        rknn_run_extend* extend     运行的扩展信息。
+    返回:
+        int                         错误码。
 */
 int rknn_wait(rknn_context context, rknn_run_extend* extend);
 
 
 /*  rknn_outputs_get
 
-    wait the inference to finish and get the outputs.
-    this function will block until inference finish.
-    the results will set to outputs[].
+    等待推理完成并获取输出。
+    此函数将阻塞直到推理完成。
+    结果将设置到 outputs[] 中。
 
-    input:
-        rknn_context context        the handle of context.
-        uint32_t n_outputs          the number of outputs.
-        rknn_output outputs[]       the arrays of output, see rknn_output.
-        rknn_output_extend*         the extend information of output.
-    return:
-        int                         error code.
+    输入:
+        rknn_context context        上下文句柄。
+        uint32_t n_outputs          输出的数量。
+        rknn_output outputs[]       输出数组，参见 rknn_output。
+        rknn_output_extend*         输出的扩展信息。
+    返回:
+        int                         错误码。
 */
 int rknn_outputs_get(rknn_context context, uint32_t n_outputs, rknn_output outputs[], rknn_output_extend* extend);
 
 
 /*  rknn_outputs_release
 
-    release the outputs that get by rknn_outputs_get.
-    after called, the rknn_output[x].buf get from rknn_outputs_get will
-    also be free when rknn_output[x].is_prealloc = FALSE.
+    释放通过 rknn_outputs_get 获取的输出。
+    调用后，当 rknn_output[x].is_prealloc = FALSE 时，
+    通过 rknn_outputs_get 获取的 rknn_output[x].buf 也将被释放。
 
-    input:
-        rknn_context context        the handle of context.
-        uint32_t n_ouputs           the number of outputs.
-        rknn_output outputs[]       the arrays of output.
-    return:
-        int                         error code
+    输入:
+        rknn_context context        上下文句柄。
+        uint32_t n_ouputs           输出的数量。
+        rknn_output outputs[]       输出数组。
+    返回:
+        int                         错误码
 */
 int rknn_outputs_release(rknn_context context, uint32_t n_ouputs, rknn_output outputs[]);
 
 
-/* new api for zero copy */
+/* 零拷贝的新接口 */
 
-/*  rknn_create_mem_from_phys (memory allocated outside)
+/*  rknn_create_mem_from_phys（内存在外部分配）
 
-    initialize tensor memory from physical address.
+    从物理地址初始化张量内存。
 
-    input:
-        rknn_context ctx            the handle of context.
-        uint64_t phys_addr          physical address.
-        void *virt_addr             virtual address.
-        uint32_t size               the size of tensor buffer.
-    return:
-        rknn_tensor_mem             the pointer of tensor memory information.
+    输入:
+        rknn_context ctx            上下文句柄。
+        uint64_t phys_addr          物理地址。
+        void *virt_addr             虚拟地址。
+        uint32_t size               张量缓冲区的大小。
+    返回:
+        rknn_tensor_mem             张量内存信息的指针。
 */
 rknn_tensor_mem* rknn_create_mem_from_phys(rknn_context ctx, uint64_t phys_addr, void *virt_addr, uint32_t size);
 
 
-/*  rknn_create_mem_from_fd (memory allocated outside)
+/*  rknn_create_mem_from_fd（内存在外部分配）
 
-    initialize tensor memory from file description.
+    从文件描述符初始化张量内存。
 
-    input:
-        rknn_context ctx            the handle of context.
-        int32_t fd                  file description.
-        void *virt_addr             virtual address.
-        uint32_t size               the size of tensor buffer.
-        int32_t offset              indicates the offset of the memory (virt_addr without offset).
-    return:
-        rknn_tensor_mem             the pointer of tensor memory information.
+    输入:
+        rknn_context ctx            上下文句柄。
+        int32_t fd                  文件描述符。
+        void *virt_addr             虚拟地址。
+        uint32_t size               张量缓冲区的大小。
+        int32_t offset              表示内存的偏移量（virt_addr 不含偏移）。
+    返回:
+        rknn_tensor_mem             张量内存信息的指针。
 */
 rknn_tensor_mem* rknn_create_mem_from_fd(rknn_context ctx, int32_t fd, void *virt_addr, uint32_t size, int32_t offset);
 
 
-/*  rknn_create_mem_from_mb_blk (memory allocated outside)
+/*  rknn_create_mem_from_mb_blk（内存在外部分配）
 
-    create tensor memory from mb_blk.
+    从 mb_blk 创建张量内存。
 
-    input:
-        rknn_context ctx            the handle of context.
-        void *mb_blk                mb_blk allocate from system api.
-        int32_t offset              indicates the offset of the memory.
-    return:
-        rknn_tensor_mem             the pointer of tensor memory information.
+    输入:
+        rknn_context ctx            上下文句柄。
+        void *mb_blk                从系统 api 分配的 mb_blk。
+        int32_t offset              表示内存的偏移量。
+    返回:
+        rknn_tensor_mem             张量内存信息的指针。
 */
 rknn_tensor_mem* rknn_create_mem_from_mb_blk(rknn_context ctx, void *mb_blk, int32_t offset);
 
 
-/*  rknn_create_mem (memory allocated inside)
+/*  rknn_create_mem（内存在内部分配）
 
-    create tensor memory.
+    创建张量内存。
 
-    input:
-        rknn_context ctx            the handle of context.
-        uint32_t size               the size of tensor buffer.
-    return:
-        rknn_tensor_mem             the pointer of tensor memory information.
+    输入:
+        rknn_context ctx            上下文句柄。
+        uint32_t size               张量缓冲区的大小。
+    返回:
+        rknn_tensor_mem             张量内存信息的指针。
 */
 rknn_tensor_mem* rknn_create_mem(rknn_context ctx, uint32_t size);
 
 
-/*  rknn_destroy_mem (support allocate inside and outside)
+/*  rknn_destroy_mem（支持内部和外部分配）
 
-    destroy tensor memory.
+    销毁张量内存。
 
-    input:
-        rknn_context ctx            the handle of context.
-        rknn_tensor_mem *mem        the pointer of tensor memory information.
-    return:
-        int                         error code
+    输入:
+        rknn_context ctx            上下文句柄。
+        rknn_tensor_mem *mem        张量内存信息的指针。
+    返回:
+        int                         错误码
 */
 int rknn_destroy_mem(rknn_context ctx, rknn_tensor_mem *mem);
 
 
 /*  rknn_set_weight_mem
 
-    set the weight memory.
+    设置权重内存。
 
-    input:
-        rknn_context ctx            the handle of context.
-        rknn_tensor_mem *mem        the array of tensor memory information
-    return:
-        int                         error code.
+    输入:
+        rknn_context ctx            上下文句柄。
+        rknn_tensor_mem *mem        张量内存信息的数组
+    返回:
+        int                         错误码。
 */
 int rknn_set_weight_mem(rknn_context ctx, rknn_tensor_mem *mem);
 
 
 /*  rknn_set_internal_mem
 
-    set the internal memory.
+    设置内部内存。
 
-    input:
-        rknn_context ctx            the handle of context.
-        rknn_tensor_mem *mem        the array of tensor memory information
-    return:
-        int                         error code.
+    输入:
+        rknn_context ctx            上下文句柄。
+        rknn_tensor_mem *mem        张量内存信息的数组
+    返回:
+        int                         错误码。
 */
 int rknn_set_internal_mem(rknn_context ctx, rknn_tensor_mem *mem);
 
 
 /*  rknn_set_io_mem
 
-    set the input and output tensors buffer.
+    设置输入和输出张量的缓冲区。
 
-    input:
-        rknn_context ctx            the handle of context.
-        rknn_tensor_mem *mem        the array of tensor memory information.
-        rknn_tensor_attr *attr      the attribute of input or output tensor buffer.
-    return:
-        int                         error code.
+    输入:
+        rknn_context ctx            上下文句柄。
+        rknn_tensor_mem *mem        张量内存信息的数组。
+        rknn_tensor_attr *attr      输入或输出张量缓冲区的属性。
+    返回:
+        int                         错误码。
 */
 int rknn_set_io_mem(rknn_context ctx, rknn_tensor_mem *mem, rknn_tensor_attr *attr);
 
-/*  rknn_set_input_shape(deprecated)
+/*  rknn_set_input_shape（已弃用）
 
-    set the input tensor shape (only valid for dynamic shape rknn model).
+    设置输入张量形状（仅对动态形状的 rknn 模型有效）。
 
-    input:
-        rknn_context ctx            the handle of context.
-        rknn_tensor_attr *attr      the attribute of input or output tensor buffer.
-    return:
-        int                         error code.
+    输入:
+        rknn_context ctx            上下文句柄。
+        rknn_tensor_attr *attr      输入或输出张量缓冲区的属性。
+    返回:
+        int                         错误码。
 */
 int rknn_set_input_shape(rknn_context ctx, rknn_tensor_attr* attr);
 
 /*  rknn_set_input_shapes
 
-    set all the input tensor shapes. graph will run under current set of input shapes after rknn_set_input_shapes.(only valid for dynamic shape rknn model).
+    设置所有输入张量的形状。调用 rknn_set_input_shapes 后，图将在当前设置的输入形状下运行。（仅对动态形状的 rknn 模型有效）。
 
-    input:
-        rknn_context ctx            the handle of context.
-        uint32_t n_inputs           the number of inputs.
-        rknn_tensor_attr attr[]     the attribute array of all input tensors.
-    return:
-        int                         error code.
+    输入:
+        rknn_context ctx            上下文句柄。
+        uint32_t n_inputs           输入的数量。
+        rknn_tensor_attr attr[]     所有输入张量的属性数组。
+    返回:
+        int                         错误码。
 */
 int rknn_set_input_shapes(rknn_context ctx, uint32_t n_inputs, rknn_tensor_attr attr[]);
 
