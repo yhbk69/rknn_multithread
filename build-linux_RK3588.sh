@@ -1,29 +1,27 @@
+#!/bin/bash
 set -e
 
-# TARGET_SOC="rk3588"
-GCC_COMPILER=aarch64-linux-gnu
+# RK3588 cross-compile script
+# Prerequisites: aarch64-linux-gnu toolchain, RKNN SDK, OpenCV for aarch64
 
-export LD_LIBRARY_PATH=${TOOL_CHAIN}/lib64:$LD_LIBRARY_PATH
+GCC_COMPILER=aarch64-linux-gnu
 export CC=${GCC_COMPILER}-gcc
 export CXX=${GCC_COMPILER}-g++
 
-ROOT_PWD=$( cd "$( dirname $0 )" && cd -P "$( dirname "$SOURCE" )" && pwd )
-
-# build
+ROOT_PWD=$(cd "$(dirname "$0")" && pwd)
 BUILD_DIR=${ROOT_PWD}/build/build_linux_aarch64
 
-if [ ! -d "${BUILD_DIR}" ]; then
-  mkdir -p ${BUILD_DIR}
-fi
-
+mkdir -p ${BUILD_DIR}
 cd ${BUILD_DIR}
-cmake ../.. -DCMAKE_SYSTEM_NAME=Linux
-make -j8
+
+cmake ../.. \
+  -DCMAKE_SYSTEM_NAME=Linux \
+  -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+  -DENABLE_QT=OFF
+
+make -j$(nproc)
 make install
-cd -
 
-# relu版本
-cd install/rknn_yolov5_demo_Linux/ && ./rknn_yolov5_demo ./model/RK3588/yolov5s-640-640.rknn ../../720p60hz.mp4
-# 使用摄像头
-# cd install/rknn_yolov5_demo_Linux/ && ./rknn_yolov5_demo ./model/RK3588/yolov5s-640-640.rknn 0
-
+echo "Build complete. Run:"
+echo "  cd install/rknn_yolov5_demo_Linux/"
+echo "  ./rknn_yolov5_demo ./model/RK3588/yolov5s-640-640.rknn 0"

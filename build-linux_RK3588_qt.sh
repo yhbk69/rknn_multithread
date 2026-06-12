@@ -1,26 +1,27 @@
+#!/bin/bash
 set -e
 
-# TARGET_SOC="rk3588"
-GCC_COMPILER=aarch64-linux-gnu
+# RK3588 cross-compile script (with Qt GUI)
+# Prerequisites: Qt5 for aarch64, OpenCV, RKNN SDK
 
-export LD_LIBRARY_PATH=${TOOL_CHAIN}/lib64:$LD_LIBRARY_PATH
+GCC_COMPILER=aarch64-linux-gnu
 export CC=${GCC_COMPILER}-gcc
 export CXX=${GCC_COMPILER}-g++
 
-ROOT_PWD=$( cd "$( dirname $0 )" && cd -P "$( dirname "$SOURCE" )" && pwd )
-
-# build
+ROOT_PWD=$(cd "$(dirname "$0")" && pwd)
 BUILD_DIR=${ROOT_PWD}/build/build_linux_aarch64_qt
 
-if [ ! -d "${BUILD_DIR}" ]; then
-  mkdir -p ${BUILD_DIR}
-fi
-
+mkdir -p ${BUILD_DIR}
 cd ${BUILD_DIR}
-cmake ../.. -DCMAKE_SYSTEM_NAME=Linux -DENABLE_QT=ON
-make -j8
-make install
-cd -
 
-# run qt demo
-cd install/rknn_yolov5_qt_demo_Linux/ && ./rknn_yolov5_qt_demo
+cmake ../.. \
+  -DCMAKE_SYSTEM_NAME=Linux \
+  -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+  -DENABLE_QT=ON
+
+make -j$(nproc)
+make install
+
+echo "Build complete. Run:"
+echo "  cd install/rknn_yolov5_qt_demo_Linux/"
+echo "  ./rknn_yolov5_qt_demo"
