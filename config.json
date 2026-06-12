@@ -1,0 +1,21 @@
+{
+  "model": {
+    "path": "./model/RK3588/yolov5s-640-640.rknn",
+    "label_file": "coco_80_labels_list.txt",
+    "input_width": 640,
+    "input_height": 640
+  },
+  "detection": {
+    "nms_threshold": 0.45,
+    "box_threshold": 0.25,
+    "class_num": 80
+  },
+  "runtime": {
+    "thread_num": 3
+  },
+  "anchor": {
+    "small": [10, 13, 16, 30, 33, 23],
+    "medium": [30, 61, 62, 45, 59, 119],
+    "large": [116, 90, 156, 198, 373, 326]
+  }
+}

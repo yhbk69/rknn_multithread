@@ -29,6 +29,8 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include "rkYolov5s.hpp"
 #include "rknnPool.hpp"
+#include "config_loader.hpp"
+#include "postprocess.h"
 
 /*
  * 检测工作线程：在后台线程中运行 RKNN 推理
@@ -41,12 +43,16 @@ public:
     DetectThread(const std::string &model_path, const std::string &video_path, int thread_num = 3)
         : model_path_(model_path), video_path_(video_path), thread_num_(thread_num), running_(true)
     {
+        // 初始化标签路径
+        initLabelPath(model_path.c_str());
     }
 
     void stop()
     {
         running_.store(false);
     }
+
+    void set_thread_num(int n) { thread_num_ = n; }
 
 signals:
     void frameReady(const QImage &image, double fps);

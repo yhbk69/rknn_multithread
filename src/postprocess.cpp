@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "postprocess.h"
+#include "config_loader.hpp"
 
 #include <math.h>
 #include <stdint.h>
@@ -24,18 +25,45 @@
 #include <set>
 #include <vector>
 
-// 类别标签文件路径
-#define LABEL_NALE_TXT_PATH "./model/coco_80_labels_list.txt"
+/* 全局配置（运行时参数） */
+static AppConfig g_config;
+
+/* 标签文件路径（运行时设置） */
+static char g_label_path[512] = "";
+
+/* Anchor 参数（从配置加载） */
+static int g_anchor0[6];
+static int g_anchor1[6];
+static int g_anchor2[6];
+static bool g_anchors_initialized = false;
 
 static char *labels[OBJ_CLASS_NUM];
 
-// YOLOv5的3组Anchor，分别对应3个不同尺度的特征图
-// 小目标Anchor(8倍下采样)
-const int anchor0[6] = {10, 13, 16, 30, 33, 23};
-// 中等目标Anchor(16倍下采样)
-const int anchor1[6] = {30, 61, 62, 45, 59, 119};
-// 大目标Anchor(32倍下采样)
-const int anchor2[6] = {116, 90, 156, 198, 373, 326};
+/**
+ * 初始化标签路径和Anchor参数
+ * @param model_path 模型文件路径，用于推导标签文件路径
+ */
+void initLabelPath(const char* model_path)
+{
+    if (g_anchors_initialized) return;
+
+    /* 加载配置 */
+    g_config = load_config();
+
+    /* 从模型路径推导标签路径 */
+    char* model_copy = strdup(model_path);
+    char* dir = dirname(model_copy);
+    snprintf(g_label_path, sizeof(g_label_path), "%s/../%s", dir, g_config.label_file.c_str());
+    free(model_copy);
+
+    /* 加载Anchor */
+    memcpy(g_anchor0, g_config.anchor_small, sizeof(g_anchor0));
+    memcpy(g_anchor1, g_config.anchor_medium, sizeof(g_anchor1));
+    memcpy(g_anchor2, g_config.anchor_large, sizeof(g_anchor2));
+    g_anchors_initialized = true;
+
+    printf("Using label path: %s\n", g_label_path);
+}
 
 /**
  * 限制数值在[min, max]范围内
@@ -361,7 +389,7 @@ static int process(int8_t *input, int *anchor, int grid_h, int grid_w, int heigh
           // 找出80个类别中概率最高的类别
           int8_t maxClassProbs = in_ptr[5 * grid_len];
           int maxClassId = 0;
-          for (int k = 1; k < OBJ_CLASS_NUM; ++k)
+          for (int k = 1; k < g_config.class_num; ++k)
           {
             int8_t prob = in_ptr[(5 + k) * grid_len];
             if (prob > maxClassProbs)
@@ -413,18 +441,17 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
                  float nms_threshold, BOX_RECT pads, float scale_w, float scale_h, std::vector<int32_t> &qnt_zps,
                  std::vector<float> &qnt_scales, detect_result_group_t *group)
 {
-  // 只在第一次调用时加载类别标签
-  static int init = -1;
-  if (init == -1)
-  {
-    int ret = 0;
-    ret = loadLabelName(LABEL_NALE_TXT_PATH, labels);
-    if (ret < 0)
+    /* 只在第一次调用时初始化 */
+    static int init = -1;
+    if (init == -1)
     {
-      return -1;
+        int ret = loadLabelName(g_label_path, labels);
+        if (ret < 0)
+        {
+            return -1;
+        }
+        init = 0;
     }
-    init = 0;
-  }
 
   memset(group, 0, sizeof(detect_result_group_t));
 
@@ -437,7 +464,7 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
   int grid_h0 = model_in_h / stride0;  // 640/8 = 80
   int grid_w0 = model_in_w / stride0;  // 640/8 = 80
   int validCount0 = 0;
-  validCount0 = process(input0, (int *)anchor0, grid_h0, grid_w0, model_in_h, model_in_w, stride0, filterBoxes, objProbs,
+  validCount0 = process(input0, g_anchor0, grid_h0, grid_w0, model_in_h, model_in_w, stride0, filterBoxes, objProbs,
                         classId, conf_threshold, qnt_zps[0], qnt_scales[0]);
 
   // ====== 处理第2个尺度: 16倍下采样，检测中等目标 ======
@@ -445,7 +472,7 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
   int grid_h1 = model_in_h / stride1;  // 640/16 = 40
   int grid_w1 = model_in_w / stride1;  // 640/16 = 40
   int validCount1 = 0;
-  validCount1 = process(input1, (int *)anchor1, grid_h1, grid_w1, model_in_h, model_in_w, stride1, filterBoxes, objProbs,
+  validCount1 = process(input1, g_anchor1, grid_h1, grid_w1, model_in_h, model_in_w, stride1, filterBoxes, objProbs,
                         classId, conf_threshold, qnt_zps[1], qnt_scales[1]);
 
   // ====== 处理第3个尺度: 32倍下采样，检测大目标 ======
@@ -453,7 +480,7 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
   int grid_h2 = model_in_h / stride2;  // 640/32 = 20
   int grid_w2 = model_in_w / stride2;  // 640/32 = 20
   int validCount2 = 0;
-  validCount2 = process(input2, (int *)anchor2, grid_h2, grid_w2, model_in_h, model_in_w, stride2, filterBoxes, objProbs,
+  validCount2 = process(input2, g_anchor2, grid_h2, grid_w2, model_in_h, model_in_w, stride2, filterBoxes, objProbs,
                         classId, conf_threshold, qnt_zps[2], qnt_scales[2]);
 
   // 汇总3个尺度的有效检测框数量
@@ -529,7 +556,7 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
  */
 void deinitPostProcess()
 {
-  for (int i = 0; i < OBJ_CLASS_NUM; i++)
+  for (int i = 0; i < g_config.class_num; i++)
   {
     if (labels[i] != nullptr)
     {

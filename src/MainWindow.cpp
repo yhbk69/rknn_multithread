@@ -3,6 +3,7 @@
  */
 
 #include "MainWindow.hpp"
+#include "config_loader.hpp"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), detect_thread_(nullptr)
@@ -103,8 +104,12 @@ void MainWindow::startDetection()
         return;
     }
 
+    // 加载配置获取线程数
+    AppConfig config = load_config();
+
     // 创建并启动检测线程
-    detect_thread_ = new DetectThread(model_path.toStdString(), video_path.toStdString());
+    detect_thread_ = new DetectThread(model_path.toStdString(), video_path.toStdString(), config.thread_num);
+    detect_thread_->set_thread_num(config.thread_num);
     connect(detect_thread_, &DetectThread::frameReady, this, &MainWindow::onFrameReady);
     connect(detect_thread_, &DetectThread::finished, this, &MainWindow::onDetectFinished);
     connect(detect_thread_, &DetectThread::error, this, &MainWindow::onDetectError);

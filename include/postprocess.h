@@ -10,13 +10,7 @@
 
 #include <stdint.h>
 #include <vector>
-
-#define OBJ_NAME_MAX_SIZE 16    // 目标类别名称的最大长度（字节）
-#define OBJ_NUMB_MAX_SIZE 64    // 单帧最多可检测到的目标数量上限
-#define OBJ_CLASS_NUM 80        // 目标类别总数（COCO 数据集共 80 类）
-#define NMS_THRESH 0.45         // NMS（非极大值抑制）的 IoU 阈值
-#define BOX_THRESH 0.25         // 置信度过滤阈值，低于此值的检测框将被丢弃
-#define PROP_BOX_SIZE (5 + OBJ_CLASS_NUM)  // 每个检测框的属性数量（x, y, w, h, obj_conf + 各类别概率）
+#include "config.h"
 
 /* 边界框矩形区域，用左、右、上、下四个坐标值表示 */
 typedef struct _BOX_RECT
@@ -68,4 +62,8 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
 
 /* 释放后处理过程中分配的资源（如内部缓存等） */
 void deinitPostProcess();
+
+/* 设置标签文件路径（从模型路径推导） */
+void initLabelPath(const char* model_path);
+
 #endif //_RKNN_YOLOV5_DEMO_POSTPROCESS_H_
