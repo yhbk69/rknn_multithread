@@ -33,7 +33,7 @@ option(ENABLE_QT "Enable Qt GUI support" ON)
 if(ENABLE_QT)
     if(PLATFORM_WINDOWS)
         # 自动检测或在命令行指定: -DQt5_DIR="C:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5"
-        find_package(Qt5 REQUIRED COMPONENTS Widgets)
+        find_package(Qt5 REQUIRED COMPONENTS Widgets WebSockets)
         message(STATUS "Qt5 found: ${Qt5Widgets_INCLUDE_DIRS}")
     elseif(PLATFORM_RK3588)
         find_package(Qt5 QUIET COMPONENTS Core Widgets Gui)
@@ -99,6 +99,11 @@ set(WIN_SOURCES
     src/camera_manager.cpp
     src/model_manager.cpp
     src/inference_manager.cpp
+    src/mjpeg_streamer.cpp
+    src/alert_websocket_server.cpp
+    src/video_websocket_server.cpp
+    src/websocket_manager.cpp
+    src/http_file_server.cpp
     include/ui/mainwindow.hpp
     include/ui/mainwindow.ui
     include/ui/settings_dialog.hpp
@@ -134,6 +139,7 @@ if(PLATFORM_WINDOWS)
     add_executable(yolo_win ${WIN_SOURCES})
     target_link_libraries(yolo_win PRIVATE
         Qt5::Widgets
+        Qt5::WebSockets
         ${OpenCV_LIBS}
         "${ONNXRUNTIME_LIB_DIR}/onnxruntime.lib"
     )

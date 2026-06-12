@@ -37,6 +37,7 @@
 #include "manager/model_manager.hpp"
 #include "manager/camera_manager.hpp"
 
+class MjpegStreamer;
 class VideoRecorder;
 class VideoWebSocketServer;
 class AlertWebSocketServer;
@@ -121,6 +122,7 @@ private:
     std::unique_ptr<InferenceManager> inferenceManager_;
 
     // 输出通道 (视频流WebSocket, 告警WebSocket, 控制WebSocket, 录像)
+    std::unique_ptr<MjpegStreamer> mjpegStreamer_;
     std::vector<std::unique_ptr<IOutputSink>> sinks_;
     VideoRecorder* videoRecorder_ = nullptr;  // 别名, UI 控制用
     HttpFileServer* httpFileServer_ = nullptr;  // HTTP 文件服务器(非sink)
