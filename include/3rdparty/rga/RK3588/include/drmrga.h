@@ -43,15 +43,15 @@
 #define RGA_BLIT_ASYNC  0x5018
 
 #ifndef ANDROID /* LINUX */
-/* flip source image horizontally (around the vertical axis) */
+/* 沿垂直轴水平翻转源图像 */
 #define HAL_TRANSFORM_FLIP_H     0x01
-/* flip source image vertically (around the horizontal axis)*/
+/* 沿水平轴垂直翻转源图像 */
 #define HAL_TRANSFORM_FLIP_V     0x02
-/* rotate source image 90 degrees clockwise */
+/* 顺时针旋转源图像 90 度 */
 #define HAL_TRANSFORM_ROT_90     0x04
-/* rotate source image 180 degrees */
+/* 旋转源图像 180 度 */
 #define HAL_TRANSFORM_ROT_180    0x03
-/* rotate source image 270 degrees clockwise */
+/* 顺时针旋转源图像 270 度 */
 #define HAL_TRANSFORM_ROT_270    0x07
 #endif
 
@@ -85,15 +85,17 @@ enum {
 /*****************************************************************************/
 
 #ifndef ANDROID /* LINUX */
-/* memory type definitions. */
+/* 内存类型定义 */
 enum drm_rockchip_gem_mem_type {
-    /* Physically Continuous memory and used as default. */
+    /* 物理连续内存，默认使用此类型 */
     ROCKCHIP_BO_CONTIG  = 1 << 0,
-    /* cachable mapping. */
+    /* 可缓存映射 */
     ROCKCHIP_BO_CACHABLE    = 1 << 1,
-    /* write-combine mapping. */
+    /* 写合并映射 */
     ROCKCHIP_BO_WC      = 1 << 2,
+    /* 安全内存（仅 TrustZone 可访问） */
     ROCKCHIP_BO_SECURE  = 1 << 3,
+    /* 掩码，用于提取内存类型标志位 */
     ROCKCHIP_BO_MASK    = ROCKCHIP_BO_CONTIG | ROCKCHIP_BO_CACHABLE |
                 ROCKCHIP_BO_WC | ROCKCHIP_BO_SECURE
 };
@@ -109,7 +111,7 @@ typedef struct bo {
 #endif
 
 /*
-   @value size:     user not need care about.For avoid read/write out of memory
+   @value size:     用户无需关心此字段，用于防止内存越界读写
  */
 typedef struct rga_rect {
     int xoffset;
@@ -180,50 +182,50 @@ struct rga_color {
 };
 
 struct rga_osd_bpp2 {
-    uint8_t  ac_swap;           // ac swap flag
-                                // 0: CA
-                                // 1: AC
-    uint8_t  endian_swap;       // rgba2bpp endian swap
-                                // 0: Big endian
-                                // 1: Little endian
+    uint8_t  ac_swap;           // AC 交换标志
+                                // 0: CA 顺序
+                                // 1: AC 顺序
+    uint8_t  endian_swap;       // rgba2bpp 字节序交换
+                                // 0: 大端序
+                                // 1: 小端序
     struct rga_color color0;
     struct rga_color color1;
 };
 
 struct rga_osd_mode_ctrl {
-    uint8_t mode;               // OSD cal mode:
-                                //   0b'1: statistics mode
-                                //   1b'1: auto inversion overlap mode
-    uint8_t direction_mode;     // horizontal or vertical
-                                //   0: horizontal
-                                //   1: vertical
-    uint8_t width_mode;         // using @fix_width or LUT width
-                                //   0: fix width
-                                //   1: LUT width
-    uint16_t block_fix_width;   // OSD block fixed width
-                                //   real width = (fix_width + 1) * 2
-    uint8_t block_num;          // OSD block num
-    uint16_t flags_index;       // auto invert flags index
+    uint8_t mode;               // OSD 计算模式:
+                                //   0b'1: 统计模式
+                                //   1b'1: 自动反转叠加模式
+    uint8_t direction_mode;     // 水平或垂直方向
+                                //   0: 水平
+                                //   1: 垂直
+    uint8_t width_mode;         // 使用固定宽度或 LUT 宽度
+                                //   0: 固定宽度
+                                //   1: LUT 宽度
+    uint16_t block_fix_width;   // OSD 块固定宽度
+                                //   实际宽度 = (fix_width + 1) * 2
+    uint8_t block_num;          // OSD 块数量
+    uint16_t flags_index;       // 自动反转标志索引
 
-    /* invertion config */
-    uint8_t color_mode;         // selete color
-                                //   0: src1 color
-                                //   1: config data color
-    uint8_t invert_flags_mode;  // invert flag selete
-                                //   0: use RAM flag
-                                //   1: usr last result
-    uint8_t default_color_sel;  // default color mode
-                                //   0: default is bright
-                                //   1: default is dark
-    uint8_t invert_enable;      // invert channel enable
-                                //   1 << 0: aplha enable
-                                //   1 << 1: Y/G disable
-                                //   1 << 2: C/RB disable
-    uint8_t invert_mode;        // invert cal mode
-                                //   0: normal(max-data)
-                                //   1: swap
-    uint8_t invert_thresh;      // if luma > thresh, osd_flag to be 1
-    uint8_t unfix_index;        // OSD width config index
+    /* 反转配置 */
+    uint8_t color_mode;         // 颜色选择
+                                //   0: 使用 src1 颜色
+                                //   1: 使用配置数据颜色
+    uint8_t invert_flags_mode;  // 反转标志选择
+                                //   0: 使用 RAM 标志
+                                //   1: 使用上次结果
+    uint8_t default_color_sel;  // 默认颜色模式
+                                //   0: 默认亮色
+                                //   1: 默认暗色
+    uint8_t invert_enable;      // 反转通道使能
+                                //   1 << 0: Alpha 通道使能
+                                //   1 << 1: Y/G 通道禁用
+                                //   1 << 2: C/RB 通道禁用
+    uint8_t invert_mode;        // 反转计算模式
+                                //   0: 普通(max-data)
+                                //   1: 交换
+    uint8_t invert_thresh;      // 若亮度 > 阈值，osd_flag 置为 1
+    uint8_t unfix_index;        // OSD 宽度配置索引
 };
 
 struct rga_osd_info {
@@ -251,10 +253,10 @@ struct rga_osd_info {
 };
 
 /*
-   @value fd:     use fd to share memory, it can be ion shard fd,and dma fd.
-   @value virAddr:userspace address
-   @value phyAddr:use phy address
-   @value hnd:    use buffer_handle_t
+   @value fd:     通过 fd 共享内存，支持 ion 共享 fd 和 dma fd
+   @value virAddr: 用户空间虚拟地址
+   @value phyAddr: 物理地址
+   @value hnd:     使用 buffer_handle_t
  */
 typedef struct rga_info {
     int fd;
@@ -320,12 +322,13 @@ typedef struct drm_rga {
 } drm_rga_t;
 
 /*
-   @fun rga_set_rect:For use to set the rects esayly
+   @fun rga_set_rect: 便捷设置矩形区域
 
-   @param rect:The rect user want to set,like setting the src rect:
-   drm_rga_t rects;
-   rga_set_rect(rects.src,0,0,1920,1080,1920,NV12);
-   mean to set the src rect to the value.
+   @param rect: 要设置的矩形结构体指针
+   示例 — 设置源矩形：
+     drm_rga_t rects;
+     rga_set_rect(&rects.src, 0, 0, 1920, 1080, 1920, 1920, RK_FORMAT_NV12);
+     表示将源矩形设置为：左上角(0,0)，宽1920，高1080，步长1920x1920，格式NV12
  */
 static inline int rga_set_rect(rga_rect_t *rect,
                                int x, int y, int w, int h, int sw, int sh, int f) {

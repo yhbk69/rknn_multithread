@@ -27,9 +27,16 @@
 #pragma clang diagnostic ignored "-Wundefined-var-template"
 #endif
 
+/*
+ * Singleton<TYPE> - 线程安全的单例模式模板类
+ *
+ * 使用双重检查锁定（通过 Mutex::Autolock）确保多线程环境下的安全初始化，
+ * 首次调用 getInstance() 时创建唯一实例，后续调用返回同一实例的引用。
+ */
 template <typename TYPE>
 class Singleton {
   public:
+    /* 获取单例实例的引用（线程安全） */
     static TYPE& getInstance() {
         Mutex::Autolock _l(sLock);
         TYPE* instance = sInstance;
@@ -40,20 +47,21 @@ class Singleton {
         return *instance;
     }
 
+    /* 检查单例实例是否已创建 */
     static bool hasInstance() {
         Mutex::Autolock _l(sLock);
         return sInstance != nullptr;
     }
 
   protected:
-    ~Singleton() { }
-    Singleton() { }
+    ~Singleton() { }  /* 析构函数（保护） */
+    Singleton() { }   /* 构造函数（保护） */
 
   private:
-    Singleton(const Singleton&);
-    Singleton& operator = (const Singleton&);
-    static Mutex sLock;
-    static TYPE* sInstance;
+    Singleton(const Singleton&);                /* 禁止拷贝构造 */
+    Singleton& operator = (const Singleton&);    /* 禁止赋值操作 */
+    static Mutex sLock;                          /* 保护实例创建的互斥锁 */
+    static TYPE* sInstance;                      /* 单例实例指针 */
 };
 
 #if defined(__clang__)
@@ -64,7 +72,7 @@ class Singleton {
     template<> ::Mutex  \
         (::Singleton< TYPE >::sLock)(::Mutex::PRIVATE);  \
     template<> TYPE* ::Singleton< TYPE >::sInstance(nullptr);  /* NOLINT */ \
-    template class ::Singleton< TYPE >;
+    template class ::Singleton< TYPE >;  /* 显式模板实例化声明 */
 
 #endif //ANDROID
 #endif //_LIBS_RGA_SINGLETON_H

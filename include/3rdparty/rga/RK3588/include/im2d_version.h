@@ -22,7 +22,7 @@
 #define RGA_VERSION_STR_HELPER(x) #x
 #define RGA_VERSION_STR(x) RGA_VERSION_STR_HELPER(x)
 
-/* RGA im2d api verison */
+/* RGA im2d API 版本号 */
 #define RGA_API_MAJOR_VERSION       1
 #define RGA_API_MINOR_VERSION       9
 #define RGA_API_REVISION_VERSION    1
@@ -35,7 +35,7 @@
     RGA_VERSION_STR(RGA_API_BUILD_VERSION) "]"
 #define RGA_API_FULL_VERSION "rga_api version " RGA_API_VERSION
 
-/* For header file version verification */
+/* 用于头文件版本校验 */
 #define RGA_CURRENT_API_VERSION (\
     (RGA_API_MAJOR_VERSION & 0xff) << 24 | \
     (RGA_API_MINOR_VERSION & 0xff) << 16 | \

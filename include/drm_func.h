@@ -37,7 +37,9 @@ enum drm_rockchip_gem_mem_type
     ROCKCHIP_BO_CACHABLE = 1 << 1,
     /* 写合并映射 */
     ROCKCHIP_BO_WC = 1 << 2,
+    /* 安全内存（仅 TrustZone 可访问） */
     ROCKCHIP_BO_SECURE = 1 << 3,
+    /* 掩码，用于提取内存类型标志位 */
     ROCKCHIP_BO_MASK = ROCKCHIP_BO_CONTIG | ROCKCHIP_BO_CACHABLE |
                        ROCKCHIP_BO_WC | ROCKCHIP_BO_SECURE
 };

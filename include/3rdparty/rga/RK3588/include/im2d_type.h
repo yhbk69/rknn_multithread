@@ -23,7 +23,7 @@
 
 #include "rga.h"
 
-#define IM_API /* define API export as needed */
+#define IM_API /* 按需定义 API 导出属性 */
 
 #ifdef __cplusplus
 #define IM_C_API extern "C"
@@ -45,7 +45,7 @@ typedef uint32_t im_ctx_id_t;
 typedef uint32_t rga_buffer_handle_t;
 
 typedef enum {
-    /* Rotation */
+    /* 旋转 */
     IM_HAL_TRANSFORM_ROT_90     = 1 << 0,
     IM_HAL_TRANSFORM_ROT_180    = 1 << 1,
     IM_HAL_TRANSFORM_ROT_270    = 1 << 2,
@@ -55,21 +55,21 @@ typedef enum {
     IM_HAL_TRANSFORM_MASK       = 0x3f,
 
     /*
-     * Blend
-     * Additional blend usage, can be used with both source and target configs.
-     * If none of the below is set, the default "SRC over DST" is applied.
+     * 混合（Blend）
+     * 额外的混合模式，可与源和目标配置同时使用。
+     * 若未设置以下任何标志，默认使用「SRC over DST」模式。
      */
-    IM_ALPHA_BLEND_SRC_OVER     = 1 << 6,     /* Default, Porter-Duff "SRC over DST" */
-    IM_ALPHA_BLEND_SRC          = 1 << 7,     /* Porter-Duff "SRC" */
-    IM_ALPHA_BLEND_DST          = 1 << 8,     /* Porter-Duff "DST" */
-    IM_ALPHA_BLEND_SRC_IN       = 1 << 9,     /* Porter-Duff "SRC in DST" */
-    IM_ALPHA_BLEND_DST_IN       = 1 << 10,    /* Porter-Duff "DST in SRC" */
-    IM_ALPHA_BLEND_SRC_OUT      = 1 << 11,    /* Porter-Duff "SRC out DST" */
-    IM_ALPHA_BLEND_DST_OUT      = 1 << 12,    /* Porter-Duff "DST out SRC" */
-    IM_ALPHA_BLEND_DST_OVER     = 1 << 13,    /* Porter-Duff "DST over SRC" */
-    IM_ALPHA_BLEND_SRC_ATOP     = 1 << 14,    /* Porter-Duff "SRC ATOP" */
-    IM_ALPHA_BLEND_DST_ATOP     = 1 << 15,    /* Porter-Duff "DST ATOP" */
-    IM_ALPHA_BLEND_XOR          = 1 << 16,    /* Xor */
+    IM_ALPHA_BLEND_SRC_OVER     = 1 << 6,     /* 默认,Porter-Duff「SRC over DST」 */
+    IM_ALPHA_BLEND_SRC          = 1 << 7,     /* Porter-Duff「SRC」 */
+    IM_ALPHA_BLEND_DST          = 1 << 8,     /* Porter-Duff「DST」 */
+    IM_ALPHA_BLEND_SRC_IN       = 1 << 9,     /* Porter-Duff「SRC in DST」 */
+    IM_ALPHA_BLEND_DST_IN       = 1 << 10,    /* Porter-Duff「DST in SRC」 */
+    IM_ALPHA_BLEND_SRC_OUT      = 1 << 11,    /* Porter-Duff「SRC out DST」 */
+    IM_ALPHA_BLEND_DST_OUT      = 1 << 12,    /* Porter-Duff「DST out SRC」 */
+    IM_ALPHA_BLEND_DST_OVER     = 1 << 13,    /* Porter-Duff「DST over SRC」 */
+    IM_ALPHA_BLEND_SRC_ATOP     = 1 << 14,    /* Porter-Duff「SRC ATOP」 */
+    IM_ALPHA_BLEND_DST_ATOP     = 1 << 15,    /* Porter-Duff「DST ATOP」 */
+    IM_ALPHA_BLEND_XOR          = 1 << 16,    /* 异或 */
     IM_ALPHA_BLEND_MASK         = 0x1ffc0,
 
     IM_ALPHA_COLORKEY_NORMAL    = 1 << 17,
@@ -77,7 +77,7 @@ typedef enum {
     IM_ALPHA_COLORKEY_MASK      = 0x60000,
 
     IM_SYNC                     = 1 << 19,
-    IM_CROP                     = 1 << 20,    /* Unused */
+    IM_CROP                     = 1 << 20,    /* 预留，未使用 */
     IM_COLOR_FILL               = 1 << 21,
     IM_COLOR_PALETTE            = 1 << 22,
     IM_NN_QUANTIZE              = 1 << 23,
@@ -123,12 +123,12 @@ typedef enum {
 } IM_MOSAIC_MODE;
 
 typedef enum {
-    IM_BORDER_CONSTANT = 0,             /* iiiiii|abcdefgh|iiiiiii with some specified value 'i' */
-    IM_BORDER_REFLECT = 2,              /* fedcba|abcdefgh|hgfedcb */
-    IM_BORDER_WRAP = 3,                 /* cdefgh|abcdefgh|abcdefg */
+    IM_BORDER_CONSTANT = 0,             /* 常量填充边框：iiiiii|abcdefgh|iiiiiii（用指定值 'i' 填充） */
+    IM_BORDER_REFLECT = 2,              /* 镜像填充边框：fedcba|abcdefgh|hgfedcb */
+    IM_BORDER_WRAP = 3,                 /* 环绕填充边框：cdefgh|abcdefgh|abcdefg */
 } IM_BORDER_TYPE;
 
-/* Status codes, returned by any blit function */
+/* 状态码，由所有 blit 函数返回 */
 typedef enum {
     IM_YUV_TO_RGB_BT601_LIMIT   = 1 << 0,
     IM_YUV_TO_RGB_BT601_FULL    = 2 << 0,
@@ -222,16 +222,16 @@ typedef enum {
 } IM_PRE_INTR_FLAGS;
 
 typedef enum {
-    IM_CONTEXT_NONE             = 0x0,
-    IM_CONTEXT_SRC_FIX_ENABLE   = 0x1 << 0,     // Enable kernel to modify the image parameters of the channel.
-    IM_CONTEXT_SRC_CACHE_INFO   = 0x1 << 1,     // It will replace the parameters in ctx with the modified parameters.
-    IM_CONTEXT_SRC1_FIX_ENABLE  = 0x1 << 2,
-    IM_CONTEXT_SRC1_CACHE_INFO  = 0x1 << 3,
-    IM_CONTEXT_DST_FIX_ENABLE   = 0x1 << 4,
-    IM_CONTEXT_DST_CACHE_INFO   = 0x1 << 5,
+    IM_CONTEXT_NONE             = 0x0,           /* 无上下文 */
+    IM_CONTEXT_SRC_FIX_ENABLE   = 0x1 << 0,     /* 允许内核修改源通道图像参数 */
+    IM_CONTEXT_SRC_CACHE_INFO   = 0x1 << 1,     /* 用修改后的参数替换 ctx 中的参数 */
+    IM_CONTEXT_SRC1_FIX_ENABLE  = 0x1 << 2,     /* 允许内核修改源 1 通道图像参数 */
+    IM_CONTEXT_SRC1_CACHE_INFO  = 0x1 << 3,     /* 用修改后的参数替换 ctx 中的源 1 参数 */
+    IM_CONTEXT_DST_FIX_ENABLE   = 0x1 << 4,     /* 允许内核修改目标通道图像参数 */
+    IM_CONTEXT_DST_CACHE_INFO   = 0x1 << 5,     /* 用修改后的参数替换 ctx 中的目标参数 */
 } IM_CONTEXT_FLAGS;
 
-/* Get RGA basic information index */
+/* 获取 RGA 基本信息的索引 */
 typedef enum {
     RGA_VENDOR = 0,
     RGA_VERSION,
@@ -246,64 +246,64 @@ typedef enum {
     RGA_ALL,
 } IM_INFORMATION;
 
-/* Status codes, returned by any blit function */
+/* 状态码，由所有 blit 函数返回 */
 typedef enum {
-    IM_STATUS_NOERROR           =  2,
-    IM_STATUS_SUCCESS           =  1,
-    IM_STATUS_NOT_SUPPORTED     = -1,
-    IM_STATUS_OUT_OF_MEMORY     = -2,
-    IM_STATUS_INVALID_PARAM     = -3,
-    IM_STATUS_ILLEGAL_PARAM     = -4,
-    IM_STATUS_ERROR_VERSION     = -5,
-    IM_STATUS_FAILED            =  0,
+    IM_STATUS_NOERROR           =  2,  /* 无错误 */
+    IM_STATUS_SUCCESS           =  1,  /* 成功 */
+    IM_STATUS_NOT_SUPPORTED     = -1,  /* 不支持的操作 */
+    IM_STATUS_OUT_OF_MEMORY     = -2,  /* 内存不足 */
+    IM_STATUS_INVALID_PARAM     = -3,  /* 无效参数 */
+    IM_STATUS_ILLEGAL_PARAM     = -4,  /* 非法参数 */
+    IM_STATUS_ERROR_VERSION     = -5,  /* 版本错误 */
+    IM_STATUS_FAILED            =  0,  /* 失败 */
 } IM_STATUS;
 
-/* Rectangle definition */
+/* 矩形区域定义 */
 typedef struct {
-    int x;        /* upper-left x */
-    int y;        /* upper-left y */
-    int width;    /* width */
-    int height;   /* height */
+    int x;        /* 左上角 x 坐标 */
+    int y;        /* 左上角 y 坐标 */
+    int width;    /* 宽度 */
+    int height;   /* 高度 */
 } im_rect;
 
 typedef struct {
-    int max;                    /* The Maximum value of the color key */
-    int min;                    /* The minimum value of the color key */
+    int max;                    /* 色键最大值 */
+    int min;                    /* 色键最小值 */
 } im_colorkey_range;
 
 
 typedef struct im_nn {
-    int scale_r;                /* scaling factor on R channal */
-    int scale_g;                /* scaling factor on G channal */
-    int scale_b;                /* scaling factor on B channal */
-    int offset_r;               /* offset on R channal */
-    int offset_g;               /* offset on G channal */
-    int offset_b;               /* offset on B channal */
+    int scale_r;                /* R 通道缩放因子 */
+    int scale_g;                /* G 通道缩放因子 */
+    int scale_b;                /* B 通道缩放因子 */
+    int offset_r;               /* R 通道偏移量 */
+    int offset_g;               /* G 通道偏移量 */
+    int offset_b;               /* B 通道偏移量 */
 } im_nn_t;
 
-/* im_info definition */
+/* 图像信息结构体定义 */
 typedef struct {
-    void* vir_addr;                     /* virtual address */
-    void* phy_addr;                     /* physical address */
-    int fd;                             /* shared fd */
+    void* vir_addr;                     /* 虚拟地址 */
+    void* phy_addr;                     /* 物理地址 */
+    int fd;                             /* 共享 fd */
 
-    int width;                          /* width */
-    int height;                         /* height */
-    int wstride;                        /* wstride */
-    int hstride;                        /* hstride */
-    int format;                         /* format */
+    int width;                          /* 宽度 */
+    int height;                         /* 高度 */
+    int wstride;                        /* 宽度方向步长 */
+    int hstride;                        /* 高度方向步长 */
+    int format;                         /* 像素格式 */
 
-    int color_space_mode;               /* color_space_mode */
-    int global_alpha;                   /* global_alpha */
-    int rd_mode;
+    int color_space_mode;               /* 色彩空间模式 */
+    int global_alpha;                   /* 全局 Alpha 值 */
+    int rd_mode;                        /* 读写模式 */
 
-    /* legarcy */
-    int color;                          /* color, used by color fill */
-    im_colorkey_range colorkey_range;   /* range value of color key */
+    /* 兼容旧版 */
+    int color;                          /* 颜色值，用于颜色填充 */
+    im_colorkey_range colorkey_range;   /* 色键范围 */
     im_nn_t nn;
     int rop_code;
 
-    rga_buffer_handle_t handle;         /* buffer handle */
+    rga_buffer_handle_t handle;         /* 缓冲区句柄 */
 } rga_buffer_t;
 
 typedef struct im_color {
@@ -328,59 +328,59 @@ typedef struct im_osd_invert_factor {
 } im_osd_invert_factor_t;
 
 typedef struct im_osd_bpp2 {
-    uint8_t  ac_swap;       // ac swap flag
-                            // 0: CA
-                            // 1: AC
-    uint8_t  endian_swap;   // rgba2bpp endian swap
-                            // 0: Big endian
-                            // 1: Little endian
+    uint8_t  ac_swap;       // AC 交换标志
+                            // 0: CA 顺序
+                            // 1: AC 顺序
+    uint8_t  endian_swap;   // rgba2bpp 字节序交换
+                            // 0: 大端序
+                            // 1: 小端序
     im_color_t color0;
     im_color_t color1;
 } im_osd_bpp2_t;
 
 typedef struct im_osd_block {
-    int width_mode;                 // normal or different
+    int width_mode;                 // 普通或差异模式
                                     //   IM_OSD_BLOCK_MODE_NORMAL
                                     //   IM_OSD_BLOCK_MODE_DIFFERENT
     union {
-        int width;                  // normal_mode block width
-        int width_index;            // different_mode block width index in RAM
+        int width;                  // 普通模式下的块宽度
+        int width_index;            // 差异模式下在 RAM 中的块宽度索引
     };
 
-    int block_count;                // block count
+    int block_count;                // 块数量
 
-    int background_config;          // background config is bright or dark
+    int background_config;          // 背景配置：亮色或暗色
                                     //   IM_OSD_BACKGROUND_DEFAULT_BRIGHT
                                     //   IM_OSD_BACKGROUND_DEFAULT_DARK
 
-    int direction;                  // osd block direction
+    int direction;                  // OSD 块方向
                                     //   IM_OSD_MODE_HORIZONTAL
                                     //   IM_OSD_MODE_VERTICAL
 
-    int color_mode;                 // using src1 color or config color
+    int color_mode;                 // 使用 src1 颜色或配置颜色
                                     //   IM_OSD_COLOR_PIXEL
                                     //   IM_OSD_COLOR_EXTERNAL
-    im_color_t normal_color;        // config color: normal
-    im_color_t invert_color;        // config color: invert
+    im_color_t normal_color;        // 配置颜色：普通
+    im_color_t invert_color;        // 配置颜色：反转
 } im_osd_block_t;
 
 typedef struct im_osd_invert {
-    int invert_channel;         // invert channel config:
+    int invert_channel;         // 反转通道配置:
                                 //   IM_OSD_INVERT_CHANNEL_NONE
                                 //   IM_OSD_INVERT_CHANNEL_Y_G
                                 //   IM_OSD_INVERT_CHANNEL_C_RB
                                 //   IM_OSD_INVERT_CHANNEL_ALPHA
                                 //   IM_OSD_INVERT_CHANNEL_COLOR
                                 //   IM_OSD_INVERT_CHANNEL_BOTH
-    int flags_mode;             // use external or inertnal RAM invert flags
+    int flags_mode;             // 使用外部或内部 RAM 反转标志
                                 //   IM_OSD_FLAGS_EXTERNAL
                                 //   IM_OSD_FLAGS_INTERNAL
-    int flags_index;            // flags index when using internal RAM invert flags
+    int flags_index;            // 使用内部 RAM 反转标志时的标志索引
 
-    uint64_t invert_flags;      // external invert flags
-    uint64_t current_flags;     // current flags
+    uint64_t invert_flags;      // 外部反转标志
+    uint64_t current_flags;     // 当前标志
 
-    int invert_mode;            // invert use swap or factor
+    int invert_mode;            // 反转使用交换或因子模式
                                 //   IM_OSD_INVERT_USE_FACTOR
                                 //   IM_OSD_INVERT_USE_SWAP
     im_osd_invert_factor_t factor;
@@ -389,10 +389,10 @@ typedef struct im_osd_invert {
 } im_osd_invert_t;
 
 typedef struct im_osd {
-    int osd_mode;                       // osd mode: statistics or auto_invert
+    int osd_mode;                       // OSD 模式：统计或自动反转
                                         //   IM_OSD_MODE_STATISTICS
                                         //   IM_OSD_MODE_AUTO_INVERT
-    im_osd_block_t block_parm;          // osd block info config
+    im_osd_block_t block_parm;          // OSD 块信息配置
 
     im_osd_invert_t invert_config;
 
@@ -410,21 +410,21 @@ typedef struct im_intr_config {
 typedef struct im_opt {
     im_api_version_t version DEFAULT_INITIALIZER(RGA_CURRENT_API_HEADER_VERSION);
 
-    int color;                          /* color, used by color fill */
-    im_colorkey_range colorkey_range;   /* range value of color key */
+    int color;                          /* 颜色值，用于颜色填充 */
+    im_colorkey_range colorkey_range;   /* 色键范围 */
     im_nn_t nn;
     int rop_code;
 
-    int priority;
-    int core;
+    int priority;                       /* 任务优先级 */
+    int core;                           /* 指定调度核心 */
 
-    int mosaic_mode;
+    int mosaic_mode;                    /* 马赛克模式 */
 
-    im_osd_t osd_config;
+    im_osd_t osd_config;                /* OSD 配置 */
 
-    im_intr_config_t intr_config;
+    im_intr_config_t intr_config;       /* 中断配置 */
 
-    char reserve[128];
+    char reserve[128];                  /* 预留 */
 } im_opt_t;
 
 typedef struct im_handle_param {

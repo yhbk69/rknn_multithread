@@ -15,6 +15,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * im2d_expand.h - im2d Android 平台扩展接口（预留）
+ *
+ * 本文件预定义了 Android 平台下 GraphicBuffer / AHardwareBuffer 的导入和包装接口，
+ * 当前所有函数均为注释状态，启用时需取消注释并链接 Android 系统库。
+ */
 #ifndef _im2d_expand_h_
 #define _im2d_expand_h_
 

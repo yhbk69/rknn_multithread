@@ -49,9 +49,14 @@
 #include "rga.h"
 
 // -------------------------------------------------------------------------------
+// 以下为 Android Gralloc 缓冲区操作辅助函数，用于获取 GraphicBuffer 的文件描述符、属性和映射地址
+
+/* 获取 GraphicBuffer 句柄对应的文件描述符（DMA-BUF fd） */
 int         RkRgaGetHandleFd(buffer_handle_t handle, int *fd);
+/* 获取 GraphicBuffer 句柄的属性列表（宽、高、格式、步长等） */
 int         RkRgaGetHandleAttributes(buffer_handle_t handle,
                                      std::vector<int> *attrs);
+/* 获取 GraphicBuffer 句柄映射到用户空间的虚拟地址 */
 int         RkRgaGetHandleMapAddress(buffer_handle_t handle,
                                      void **buf);
 #endif  //Android

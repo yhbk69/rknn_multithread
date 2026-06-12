@@ -38,11 +38,9 @@ extern "C"{
 #endif
 
 /*
- * Compatible with the old version of C interface.The new
- * version of the C interface no longer requires users to
- * initialize rga, so RgaInit and RgaDeInit are just for
- * compatibility with the old C interface, so please do
- * not use ctx, because it is usually a NULL.
+ * 兼容旧版 C 接口。新版 C 接口不再需要用户手动初始化 RGA，
+ * 因此 RgaInit 和 RgaDeInit 仅为兼容旧接口而保留。
+ * 请勿使用 ctx 参数，因为它通常为 NULL。
  */
 #define RgaInit(ctx) ({ \
     int ret = 0; \

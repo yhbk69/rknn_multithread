@@ -21,12 +21,12 @@
 #include "im2d_type.h"
 
 /**
- * Import external buffers into RGA driver.
+ * 将外部缓冲区导入 RGA 驱动（按大小模式）
  *
  * @param fd/va/pa
- *      Select dma_fd/virtual_address/physical_address by buffer type
+ *      根据缓冲区类型选择 dma_fd / 虚拟地址 / 物理地址
  * @param size
- *      Describes the size of the image buffer
+ *      图像缓冲区的大小
  *
  * @return rga_buffer_handle_t
  */
@@ -37,16 +37,16 @@ IM_API rga_buffer_handle_t importbuffer_physicaladdr(uint64_t pa, int size);
 #endif
 
 /**
- * Import external buffers into RGA driver.
+ * 将外部缓冲区导入 RGA 驱动（按宽高格式模式）
  *
  * @param fd/va/pa
- *      Select dma_fd/virtual_address/physical_address by buffer type
+ *      根据缓冲区类型选择 dma_fd / 虚拟地址 / 物理地址
  * @param width
- *      Describes the pixel width stride of the image buffer
+ *      图像缓冲区的像素宽度步长
  * @param height
- *      Describes the pixel height stride of the image buffer
+ *      图像缓冲区的像素高度步长
  * @param format
- *      Describes the pixel format of the image buffer
+ *      图像缓冲区的像素格式
  *
  * @return rga_buffer_handle_t
  */
@@ -57,12 +57,12 @@ IM_API rga_buffer_handle_t importbuffer_physicaladdr(uint64_t pa, int width, int
 #endif
 
 /**
- * Import external buffers into RGA driver.
+ * 将外部缓冲区导入 RGA 驱动（按参数结构体模式）
  *
  * @param fd/va/pa
- *      Select dma_fd/virtual_address/physical_address by buffer type
+ *      根据缓冲区类型选择 dma_fd / 虚拟地址 / 物理地址
  * @param param
- *      Configure buffer parameters
+ *      缓冲区参数配置
  *
  * @return rga_buffer_handle_t
  */
@@ -71,30 +71,30 @@ IM_EXPORT_API rga_buffer_handle_t importbuffer_virtualaddr(void *va, im_handle_p
 IM_EXPORT_API rga_buffer_handle_t importbuffer_physicaladdr(uint64_t pa, im_handle_param_t *param);
 
 /**
- * Import external buffers into RGA driver.
+ * 释放已导入的 RGA 缓冲区句柄
  *
  * @param handle
- *      rga buffer handle
+ *      RGA 缓冲区句柄
  *
- * @return success or else negative error code.
+ * @return 成功返回 0，否则返回负错误码
  */
 IM_EXPORT_API IM_STATUS releasebuffer_handle(rga_buffer_handle_t handle);
 
 /**
- * Wrap image Parameters.
+ * 包装图像参数为 rga_buffer_t 结构体
  *
  * @param handle/virtualaddr/physicaladdr/fd
- *      RGA buffer handle/virtualaddr/physicaladdr/fd.
+ *      RGA 缓冲区句柄 / 虚拟地址 / 物理地址 / 文件描述符
  * @param width
- *      Width of image manipulation area.
+ *      图像操作区域的宽度
  * @param height
- *      Height of image manipulation area.
+ *      图像操作区域的高度
  * @param wstride
- *      Width pixel stride, default (width = wstride).
+ *      宽度方向像素步长，默认与 width 相同
  * @param hstride
- *      Height pixel stride, default (height = hstride).
+ *      高度方向像素步长，默认与 height 相同
  * @param format
- *      Image format.
+ *      图像格式
  *
  * @return rga_buffer_t
  */
@@ -109,7 +109,7 @@ IM_EXPORT_API IM_STATUS releasebuffer_handle(rga_buffer_handle_t handle);
             im2d_api_buffer = wrapbuffer_handle_t(handle, width, height, __args[0], __args[1], format); \
         } else { \
             memset(&im2d_api_buffer, 0x0, sizeof(im2d_api_buffer)); \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         im2d_api_buffer; \
     })
@@ -125,7 +125,7 @@ IM_EXPORT_API IM_STATUS releasebuffer_handle(rga_buffer_handle_t handle);
             im2d_api_buffer = wrapbuffer_virtualaddr_t(vir_addr, width, height, __args[0], __args[1], format); \
         } else { \
             memset(&im2d_api_buffer, 0x0, sizeof(im2d_api_buffer)); \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         im2d_api_buffer; \
     })
@@ -141,7 +141,7 @@ IM_EXPORT_API IM_STATUS releasebuffer_handle(rga_buffer_handle_t handle);
             im2d_api_buffer = wrapbuffer_physicaladdr_t(phy_addr, width, height, __args[0], __args[1], format); \
         } else { \
             memset(&im2d_api_buffer, 0x0, sizeof(im2d_api_buffer)); \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         im2d_api_buffer; \
     })
@@ -157,11 +157,11 @@ IM_EXPORT_API IM_STATUS releasebuffer_handle(rga_buffer_handle_t handle);
             im2d_api_buffer = wrapbuffer_fd_t(fd, width, height, __args[0], __args[1], format); \
         } else { \
             memset(&im2d_api_buffer, 0x0, sizeof(im2d_api_buffer)); \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         im2d_api_buffer; \
     })
-/* Symbols for define *_t functions */
+/* 底层包装函数声明（由上方宏调用） */
 IM_C_API rga_buffer_t wrapbuffer_handle_t(rga_buffer_handle_t handle, int width, int height, int wstride, int hstride, int format);
 IM_C_API rga_buffer_t wrapbuffer_virtualaddr_t(void* vir_addr, int width, int height, int wstride, int hstride, int format);
 IM_C_API rga_buffer_t wrapbuffer_physicaladdr_t(void* phy_addr, int width, int height, int wstride, int hstride, int format);

@@ -23,94 +23,94 @@
 #ifdef __cplusplus
 
 /**
- * copy
+ * 图像复制
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcopy(const rga_buffer_t src, rga_buffer_t dst, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * Resize
+ * 图像缩放
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param fx
- *      X-direction resize factor.
+ *      X 方向缩放因子
  * @param fy
- *      X-direction resize factor.
+ *      Y 方向缩放因子
  * @param interpolation
- *      Interpolation formula(Only RGA1 support).
+ *      插值算法（仅 RGA1 支持）
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imresize(const rga_buffer_t src, rga_buffer_t dst, double fx = 0, double fy = 0, int interpolation = 0, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * Crop
+ * 图像裁剪
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param rect
- *      The rectangle on the source image that needs to be cropped.
+ *      源图像上需要裁剪的矩形区域
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcrop(const rga_buffer_t src, rga_buffer_t dst, im_rect rect, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * translate
+ * 图像平移
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param x
- *      Output the coordinates of the starting point in the X-direction of the destination image.
+ *      目标图像 X 方向起始点坐标
  * @param y
- *      Output the coordinates of the starting point in the Y-direction of the destination image.
+ *      目标图像 Y 方向起始点坐标
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imtranslate(const rga_buffer_t src, rga_buffer_t dst, int x, int y, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * format convert
+ * 格式转换
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param sfmt
- *      The source image format.
+ *      源图像格式
  * @param dfmt
- *      The destination image format.
+ *      目标图像格式
  * @param mode
- *      color space mode:
+ *      色彩空间模式:
  *          IM_YUV_TO_RGB_BT601_LIMIT
  *          IM_YUV_TO_RGB_BT601_FULL
  *          IM_YUV_TO_RGB_BT709_LIMIT
@@ -118,326 +118,328 @@ IM_API IM_STATUS imtranslate(const rga_buffer_t src, rga_buffer_t dst, int x, in
  *          IM_RGB_TO_YUV_BT601_LIMIT
  *          IM_RGB_TO_YUV_BT709_LIMIT
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcvtcolor(rga_buffer_t src, rga_buffer_t dst, int sfmt, int dfmt, int mode = IM_COLOR_SPACE_DEFAULT, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * rotation
+ * 图像旋转
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param rotation
- *      IM_HAL_TRANSFORM_ROT_90
- *      IM_HAL_TRANSFORM_ROT_180
- *      IM_HAL_TRANSFORM_ROT_270
+ *      旋转角度:
+ *          IM_HAL_TRANSFORM_ROT_90
+ *          IM_HAL_TRANSFORM_ROT_180
+ *          IM_HAL_TRANSFORM_ROT_270
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imrotate(const rga_buffer_t src, rga_buffer_t dst, int rotation, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * flip
+ * 图像翻转
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param mode
- *      IM_HAL_TRANSFORM_FLIP_H
- *      IM_HAL_TRANSFORM_FLIP_V
+ *      翻转模式:
+ *          IM_HAL_TRANSFORM_FLIP_H  - 水平翻转
+ *          IM_HAL_TRANSFORM_FLIP_V  - 垂直翻转
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imflip(const rga_buffer_t src, rga_buffer_t dst, int mode, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * 2-channel blend (SRC + DST -> DST or SRCA + SRCB -> DST)
+ * 双通道混合（SRC + DST -> DST 或 SRCA + SRCB -> DST）
  *
  * @param fg_image
- *      The foreground image.
+ *      前景图像
  * @param bg_image
- *      The background image, which is also the output destination image.
+ *      背景图像，也是输出目标图像
  * @param mode
- *      Port-Duff mode:
+ *      Porter-Duff 混合模式:
  *          IM_ALPHA_BLEND_SRC
  *          IM_ALPHA_BLEND_DST
  *          IM_ALPHA_BLEND_SRC_OVER
  *          IM_ALPHA_BLEND_DST_OVER
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imblend(const rga_buffer_t fd_image, rga_buffer_t bg_image, int mode = IM_ALPHA_BLEND_SRC_OVER, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * 3-channel blend (SRC + DST -> DST or SRCA + SRCB -> DST)
+ * 三通道合成（SRCA + SRCB -> DST）
  *
  * @param fg_image
- *      The foreground image.
+ *      前景图像
  * @param bg_image
- *      The background image.
+ *      背景图像
  * @param output_image
- *      The output destination image.
+ *      输出目标图像
  * @param mode
- *      Port-Duff mode:
+ *      Porter-Duff 混合模式:
  *          IM_ALPHA_BLEND_SRC
  *          IM_ALPHA_BLEND_DST
  *          IM_ALPHA_BLEND_SRC_OVER
  *          IM_ALPHA_BLEND_DST_OVER
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  * @param release_fence_fd
- *      When 'sync == 0', the fence_fd used to identify the current job state
+ *      当 sync == 0 时，用于标识当前 job 状态的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcomposite(const rga_buffer_t srcA, const rga_buffer_t srcB, rga_buffer_t dst, int mode = IM_ALPHA_BLEND_SRC_OVER, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * color key
+ * 色键抠图
  *
- * @param fg_image
- *      The foreground image.
- * @param bg_image
- *      The background image, which is also the output destination image.
- * @param colorkey_range
- *      The range of color key.
+ * @param src
+ *      前景图像
+ * @param dst
+ *      背景图像，也是输出目标图像
+ * @param range
+ *      色键范围
+ * @param mode
+ *      色键模式（IM_ALPHA_COLORKEY_NORMAL / IM_ALPHA_COLORKEY_INVERTED）
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcolorkey(const rga_buffer_t src, rga_buffer_t dst, im_colorkey_range range, int mode = IM_ALPHA_COLORKEY_NORMAL, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * OSD
+ * OSD 叠加
  *
  * @param osd
- *      The osd text block.
+ *      OSD 文本块图像
  * @param dst
- *      The background image.
+ *      背景图像
  * @param osd_rect
- *      The rectangle on the source image that needs to be OSD.
+ *      需要叠加 OSD 的矩形区域
  * @param osd_config
- *      osd mode configuration.
+ *      OSD 模式配置
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imosd(const rga_buffer_t osd,const rga_buffer_t dst,
                        const im_rect osd_rect, im_osd_t *osd_config,
                        int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * nn quantize
+ * NN 量化
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
- * @param nninfo
- *      nn configuration
+ *      输出目标图像
+ * @param nn_info
+ *      NN 量化配置（各通道缩放因子和偏移量）
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imquantize(const rga_buffer_t src, rga_buffer_t dst, im_nn_t nn_info, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * ROP
+ * 光栅操作（ROP）
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param rop_code
- *      The ROP opcode.
+ *      ROP 操作码（AND/OR/XOR/NOT 等）
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imrop(const rga_buffer_t src, rga_buffer_t dst, int rop_code, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * fill/reset/draw
+ * 颜色填充/重置/绘制
  *
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param rect
- *      The rectangle on the source image that needs to be filled with color.
+ *      需要填充颜色的矩形区域
  * @param color
- *      The fill color value.
+ *      填充颜色值
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imfill(rga_buffer_t dst, im_rect rect, int color, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * fill array
+ * 批量颜色填充
  *
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param rect_array
- *      The rectangle arrays on the source image that needs to be filled with color.
+ *      需要填充颜色的矩形区域数组
  * @param array_size
- *      The size of rectangular area arrays.
+ *      矩形区域数组的大小
  * @param color
- *      The fill color value.
+ *      填充颜色值
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imfillArray(rga_buffer_t dst, im_rect *rect_array, int array_size, uint32_t color, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * fill rectangle
+ * 绘制矩形
  *
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param rect
- *      The rectangle on the source image that needs to be filled with color.
+ *      矩形区域
  * @param color
- *      The fill color value.
+ *      矩形颜色值
  * @param thickness
- *      Thickness of lines that make up the rectangle. Negative values, like -1,
- *      mean that the function has to draw a filled rectangle.
+ *      矩形线条粗细。负值（如 -1）表示绘制实心矩形
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imrectangle(rga_buffer_t dst, im_rect rect,
                              uint32_t color, int thickness,
                              int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * fill rectangle array
+ * 批量绘制矩形
  *
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param rect_array
- *      The rectangle arrays on the source image that needs to be filled with color.
+ *      矩形区域数组
  * @param array_size
- *      The size of rectangular area arrays.
+ *      矩形区域数组的大小
  * @param color
- *      The fill color value.
+ *      矩形颜色值
  * @param thickness
- *      Thickness of lines that make up the rectangle. Negative values, like -1,
- *      mean that the function has to draw a filled rectangle.
+ *      矩形线条粗细。负值（如 -1）表示绘制实心矩形
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imrectangleArray(rga_buffer_t dst, im_rect *rect_array, int array_size,
                                    uint32_t color, int thickness,
                                    int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * MOSAIC
+ * 马赛克
  *
  * @param image
- *      The output destination image.
+ *      输出目标图像
  * @param rect
- *      The rectangle on the source image that needs to be mosaicked.
+ *      需要打马赛克的矩形区域
  * @param mosaic_mode
- *      mosaic block width configuration:
+ *      马赛克块大小配置:
  *          IM_MOSAIC_8
  *          IM_MOSAIC_16
  *          IM_MOSAIC_32
  *          IM_MOSAIC_64
  *          IM_MOSAIC_128
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS immosaic(const rga_buffer_t image, im_rect rect, int mosaic_mode, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * MOSAIC array
+ * 批量马赛克
  *
  * @param image
- *      The output destination image.
+ *      输出目标图像
  * @param rect_array
- *      The rectangle arrays on the source image that needs to be filled with color.
+ *      需要打马赛克的矩形区域数组
  * @param array_size
- *      The size of rectangular area arrays.
+ *      矩形区域数组的大小
  * @param mosaic_mode
- *      mosaic block width configuration:
+ *      马赛克块大小配置:
  *          IM_MOSAIC_8
  *          IM_MOSAIC_16
  *          IM_MOSAIC_32
  *          IM_MOSAIC_64
  *          IM_MOSAIC_128
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS immosaicArray(const rga_buffer_t image, im_rect *rect_array, int array_size, int mosaic_mode, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * palette
+ * 调色板
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param lut
- *      The LUT table.
+ *      LUT 查找表
  * @param sync
- *      When 'sync == 1', wait for the operation to complete and return, otherwise return directly.
+ *      当 sync == 1 时，等待操作完成后返回；否则立即返回
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS impalette(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t lut, int sync = 1, int *release_fence_fd = NULL);
 
 /**
- * process for single task mode
+ * 单任务模式图像处理（支持复合操作）
  *
  * @param src
- *      The input source image and is also the foreground image in blend.
+ *      输入源图像（混合操作中作为背景）
  * @param dst
- *      The output destination image and is also the foreground image in blend.
+ *      输出目标图像（混合操作中作为背景）
  * @param pat
- *      The foreground image, or a LUT table.
+ *      前景图像或 LUT 查找表
  * @param srect
- *      The rectangle on the src channel image that needs to be processed.
+ *      src 通道上需要处理的矩形区域
  * @param drect
- *      The rectangle on the dst channel image that needs to be processed.
+ *      dst 通道上需要处理的矩形区域
  * @param prect
- *      The rectangle on the pat channel image that needs to be processed.
- * @param opt
- *      The image processing options configuration.
+ *      pat 通道上需要处理的矩形区域
+ * @param opt_ptr
+ *      图像处理选项配置（旋转、缩放、混合、OSD 等）
  * @param usage
- *      The image processing usage.
+ *      图像处理模式标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS improcess(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t pat,
                            im_rect srect, im_rect drect, im_rect prect,
@@ -445,26 +447,26 @@ IM_API IM_STATUS improcess(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t pat,
                            im_opt_t *opt_ptr, int usage);
 
 /**
- * make border
+ * 制作边框
  *
  * @param src
- *      The input source image.
+ *      输入源图像
  * @param dst
- *      The output destination image.
+ *      输出目标图像
  * @param top
- *      the top pixels
+ *      上边框像素数
  * @param bottom
- *      the bottom pixels
+ *      下边框像素数
  * @param left
- *      the left pixels
+ *      左边框像素数
  * @param right
- *      the right pixels
+ *      右边框像素数
  * @param border_type
- *      Border type.
+ *      边框类型（常量/反射/环绕）
  * @param value
- *      The pixel value at which the border is filled.
+ *      边框填充的像素值
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS immakeBorder(rga_buffer_t src, rga_buffer_t dst,
                               int top, int bottom, int left, int right,
@@ -479,7 +481,7 @@ IM_C_API IM_STATUS imosd(const rga_buffer_t osd,const rga_buffer_t dst,
 IM_C_API IM_STATUS improcess(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t pat,
                              im_rect srect, im_rect drect, im_rect prect, int usage);
 
-/* Start: Symbols reserved for compatibility with macro functions */
+/* 以下为兼容宏函数而保留的底层 C 函数符号 */
 IM_C_API IM_STATUS imcopy_t(const rga_buffer_t src, rga_buffer_t dst, int sync);
 IM_C_API IM_STATUS imresize_t(const rga_buffer_t src, rga_buffer_t dst, double fx, double fy, int interpolation, int sync);
 IM_C_API IM_STATUS imcrop_t(const rga_buffer_t src, rga_buffer_t dst, im_rect rect, int sync);
@@ -493,21 +495,20 @@ IM_C_API IM_STATUS imquantize_t(const rga_buffer_t src, rga_buffer_t dst, im_nn_
 IM_C_API IM_STATUS imrop_t(const rga_buffer_t src, rga_buffer_t dst, int rop_code, int sync);
 IM_C_API IM_STATUS imfill_t(rga_buffer_t dst, im_rect rect, int color, int sync);
 IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t lut, int sync);
-/* End: Symbols reserved for compatibility with macro functions */
+/* 以上为兼容宏函数而保留的底层 C 函数符号 */
 
 #ifndef __cplusplus
 
 #define RGA_GET_MIN(n1, n2) ((n1) < (n2) ? (n1) : (n2))
 
 /**
- * copy
+ * 图像复制（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param sync
- *      wait until operation complete
+ * @param src    输入源图像
+ * @param dst    输出目标图像
+ * @param sync   等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imcopy(src, dst, ...) \
     ({ \
@@ -520,23 +521,22 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imcopy_t(src, dst, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * Resize
+ * 图像缩放（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param fx
- * @param fy
- * @param interpolation
- * @param sync
- *      wait until operation complete
+ * @param src           输入源图像
+ * @param dst           输出目标图像
+ * @param fx            X 方向缩放因子
+ * @param fy            Y 方向缩放因子
+ * @param interpolation 插值算法
+ * @param sync          等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imresize(src, dst, ...) \
     ({ \
@@ -553,7 +553,7 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imresize_t(src, dst, __args[RGA_GET_MIN(__argc, 0)], __args[RGA_GET_MIN(__argc, 1)], (int)__args[RGA_GET_MIN(__argc, 2)], (int)__args[RGA_GET_MIN(__argc, 3)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
@@ -566,18 +566,16 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
                    INTER_LINEAR, 1)
 
 /**
- * format convert
+ * 格式转换（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param sfmt
- * @param dfmt
- * @param mode
- *      color space mode: IM_COLOR_SPACE_MODE
- * @param sync
- *      wait until operation complete
+ * @param src   输入源图像
+ * @param dst   输出目标图像
+ * @param sfmt  源格式
+ * @param dfmt  目标格式
+ * @param mode  色彩空间模式（IM_COLOR_SPACE_MODE）
+ * @param sync  等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imcvtcolor(src, dst, sfmt, dfmt, ...) \
     ({ \
@@ -592,21 +590,20 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imcvtcolor_t(src, dst, sfmt, dfmt, (int)__args[RGA_GET_MIN(__argc, 0)], (int)__args[RGA_GET_MIN(__argc, 1)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * Crop
+ * 图像裁剪（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param rect
- * @param sync
- *      wait until operation complete
+ * @param src   输入源图像
+ * @param dst   输出目标图像
+ * @param rect  裁剪矩形区域
+ * @param sync  等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imcrop(src, dst, rect, ...) \
     ({ \
@@ -619,22 +616,21 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imcrop_t(src, dst, rect, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * translate
+ * 图像平移（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param x
- * @param y
- * @param sync
- *      wait until operation complete
+ * @param src   输入源图像
+ * @param dst   输出目标图像
+ * @param x     X 方向偏移
+ * @param y     Y 方向偏移
+ * @param sync  等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imtranslate(src, dst, x, y, ...) \
     ({ \
@@ -647,24 +643,20 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imtranslate_t(src, dst, x, y, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * rotation
+ * 图像旋转（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param rotation
- *      IM_HAL_TRANSFORM_ROT_90
- *      IM_HAL_TRANSFORM_ROT_180
- *      IM_HAL_TRANSFORM_ROT_270
- * @param sync
- *      wait until operation complete
+ * @param src       输入源图像
+ * @param dst       输出目标图像
+ * @param rotation  旋转角度
+ * @param sync      等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imrotate(src, dst, rotation, ...) \
     ({ \
@@ -677,24 +669,21 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imrotate_t(src, dst, rotation, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 
 /**
- * flip
+ * 图像翻转（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param mode
- *      IM_HAL_TRANSFORM_FLIP_H
- *      IM_HAL_TRANSFORM_FLIP_V
- * @param sync
- *      wait until operation complete
+ * @param src   输入源图像
+ * @param dst   输出目标图像
+ * @param mode  翻转模式（水平/垂直）
+ * @param sync  等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imflip(src, dst, mode, ...) \
     ({ \
@@ -707,23 +696,20 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imflip_t(src, dst, mode, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * blend (SRC + DST -> DST or SRCA + SRCB -> DST)
+ * 图像混合（C 兼容宏，SRC + DST -> DST）
  *
- * @param srcA
- * @param srcB can be NULL.
- * @param dst
- * @param mode
- *      IM_ALPHA_BLEND_MODE
- * @param sync
- *      wait until operation complete
+ * @param srcA  源图像 A
+ * @param dst   输出目标图像
+ * @param mode  混合模式
+ * @param sync  等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imblend(srcA, dst, ...) \
     ({ \
@@ -740,7 +726,7 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imblend_t(srcA, srcB, dst, (int)__args[RGA_GET_MIN(__argc, 0)], (int)__args[RGA_GET_MIN(__argc, 1)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
@@ -757,23 +743,20 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imblend_t(srcA, srcB, dst, (int)__args[RGA_GET_MIN(__argc, 0)], (int)__args[RGA_GET_MIN(__argc, 1)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * color key
+ * 色键抠图（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param colorkey_range
- *      max color
- *      min color
- * @param sync
- *      wait until operation complete
+ * @param src    输入源图像
+ * @param dst    输出目标图像
+ * @param range  色键范围
+ * @param sync   等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imcolorkey(src, dst, range, ...) \
     ({ \
@@ -788,21 +771,20 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imcolorkey_t(src, dst, range, (int)__args[RGA_GET_MIN(__argc, 0)], (int)__args[RGA_GET_MIN(__argc, 1)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * nn quantize
+ * NN 量化（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param nninfo
- * @param sync
- *      wait until operation complete
+ * @param src      输入源图像
+ * @param dst      输出目标图像
+ * @param nn_info  NN 量化配置
+ * @param sync     等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imquantize(src, dst, nn_info, ...) \
     ({ \
@@ -815,22 +797,21 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imquantize_t(src, dst, nn_info, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 
 /**
- * ROP
+ * 光栅操作 ROP（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param rop_code
- * @param sync
- *      wait until operation complete
+ * @param src       输入源图像
+ * @param dst       输出目标图像
+ * @param rop_code  ROP 操作码
+ * @param sync      等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imrop(src, dst, rop_code, ...) \
     ({ \
@@ -843,22 +824,20 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imrop_t(src, dst, rop_code, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * fill/reset/draw
+ * 颜色填充/重置/绘制（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param rect
- * @param color
- * @param sync
- *      wait until operation complete
+ * @param buf    目标图像缓冲区
+ * @param rect   矩形区域
+ * @param color  填充颜色
+ * @param sync   等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define imfill(buf, rect, color, ...) \
     ({ \
@@ -871,7 +850,7 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imfill_t(buf, rect, color, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
@@ -887,7 +866,7 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imfill_t(buf, rect, color, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
@@ -903,21 +882,20 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = imfill_t(buf, rect, color, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
 
 /**
- * palette
+ * 调色板（C 兼容宏）
  *
- * @param src
- * @param dst
- * @param lut
- * @param sync
- *      wait until operation complete
+ * @param src   输入源图像
+ * @param dst   输出目标图像
+ * @param lut   LUT 查找表
+ * @param sync  等待操作完成标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #define impalette(src, dst, lut,  ...) \
     ({ \
@@ -930,11 +908,11 @@ IM_C_API IM_STATUS impalette_t(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t 
             __ret = impalette_t(src, dst, lut, (int)__args[RGA_GET_MIN(__argc, 0)]); \
         } else { \
             __ret = IM_STATUS_INVALID_PARAM; \
-            printf("invalid parameter\n"); \
+            printf("无效参数\n"); \
         } \
         __ret; \
     })
-/* End define IM2D macro API */
+/* IM2D C 宏 API 定义结束 */
 #endif
 
 #endif /* #ifndef _im2d_single_h_ */

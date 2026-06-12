@@ -21,29 +21,29 @@
 #include "im2d_type.h"
 
 /**
- * Query RGA basic information, supported resolution, supported format, etc.
+ * 查询 RGA 基本信息（版本、支持的分辨率、格式等）
  *
  * @param name
- *      RGA_VENDOR
- *      RGA_VERSION
- *      RGA_MAX_INPUT
- *      RGA_MAX_OUTPUT
- *      RGA_INPUT_FORMAT
- *      RGA_OUTPUT_FORMAT
- *      RGA_EXPECTED
- *      RGA_ALL
+ *      RGA_VENDOR        - 厂商信息
+ *      RGA_VERSION       - 版本号
+ *      RGA_MAX_INPUT     - 最大输入分辨率
+ *      RGA_MAX_OUTPUT    - 最大输出分辨率
+ *      RGA_INPUT_FORMAT  - 支持的输入格式
+ *      RGA_OUTPUT_FORMAT - 支持的输出格式
+ *      RGA_EXPECTED      - 预期的行为
+ *      RGA_ALL           - 全部信息
  *
- * @returns a string describing properties of RGA.
+ * @returns RGA 属性描述字符串
  */
 IM_EXPORT_API const char* querystring(int name);
 
 /**
- * String to output the error message
+ * 将错误码转换为可读的错误信息字符串
  *
  * @param status
- *      process result value.
+ *      操作返回的状态码
  *
- * @returns error message.
+ * @returns 错误信息字符串
  */
 #define imStrError(...) \
     ({ \
@@ -56,36 +56,36 @@ IM_EXPORT_API const char* querystring(int name);
             im2d_api_err = imStrError_t((IM_STATUS)__args[0]); \
         } else { \
             im2d_api_err = ("Fatal error, imStrError() too many parameters\n"); \
-            printf("Fatal error, imStrError() too many parameters\n"); \
+            printf("致命错误, imStrError() 参数过多\n"); \
         } \
         im2d_api_err; \
     })
 IM_C_API const char* imStrError_t(IM_STATUS status);
 
 /**
- * check im2d api header file
+ * 校验 im2d API 头文件版本是否与运行库匹配
  *
  * @param header_version
- *      Default is RGA_CURRENT_API_HEADER_VERSION, no need to change if there are no special cases.
+ *      默认值为 RGA_CURRENT_API_HEADER_VERSION，无特殊情况无需修改
  *
- * @returns no error or else negative error code.
+ * @returns 匹配成功返回 IM_STATUS_NOERROR，否则返回负错误码
  */
 #ifdef __cplusplus
 IM_API IM_STATUS imcheckHeader(im_api_version_t header_version = RGA_CURRENT_API_HEADER_VERSION);
 #endif
 
 /**
- * check RGA basic information, supported resolution, supported format, etc.
+ * 校验 RGA 操作参数是否合法（分辨率、格式、模式等）
  *
- * @param src
- * @param dst
- * @param pat
- * @param src_rect
- * @param dst_rect
- * @param pat_rect
- * @param mode_usage
+ * @param src        源图像缓冲区
+ * @param dst        目标图像缓冲区
+ * @param pat        模板/前景图像缓冲区
+ * @param src_rect   源图像操作区域
+ * @param dst_rect   目标图像操作区域
+ * @param pat_rect   模板图像操作区域
+ * @param mode_usage 操作模式标志
  *
- * @returns no error or else negative error code.
+ * @returns 参数合法返回 IM_STATUS_NOERROR，否则返回负错误码
  */
 #define imcheck(src, dst, src_rect, dst_rect, ...) \
     ({ \
@@ -102,7 +102,7 @@ IM_API IM_STATUS imcheckHeader(im_api_version_t header_version = RGA_CURRENT_API
             __ret = imcheck_t(src, dst, __pat, src_rect, dst_rect, __pat_rect, __args[0]); \
         } else { \
             __ret = IM_STATUS_FAILED; \
-            printf("check failed\n"); \
+            printf("参数校验失败\n"); \
         } \
         __ret; \
     })
@@ -117,34 +117,35 @@ IM_API IM_STATUS imcheckHeader(im_api_version_t header_version = RGA_CURRENT_API
             __ret = imcheck_t(src, dst, pat, src_rect, dst_rect, pat_rect, __args[0]); \
         } else { \
             __ret = IM_STATUS_FAILED; \
-            printf("check failed\n"); \
+            printf("参数校验失败\n"); \
         } \
         __ret; \
     })
 IM_C_API IM_STATUS imcheck_t(const rga_buffer_t src, const rga_buffer_t dst, const rga_buffer_t pat,
                              const im_rect src_rect, const im_rect dst_rect, const im_rect pat_rect, const int mode_usage);
-/* Compatible with the legacy symbol */
+/* 兼容旧版符号 */
 IM_C_API void rga_check_perpare(rga_buffer_t *src, rga_buffer_t *dst, rga_buffer_t *pat,
                                 im_rect *src_rect, im_rect *dst_rect, im_rect *pat_rect, int mode_usage);
 
 /**
- * block until all execution is complete
+ * 阻塞等待所有执行完成
  *
  * @param release_fence_fd
- *      RGA job release fence fd
+ *      RGA job 完成释放的 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 0，否则返回负错误码
  */
 IM_EXPORT_API IM_STATUS imsync(int release_fence_fd);
 
 /**
- * config
+ * 配置 RGA 参数
  *
  * @param name
- *      enum IM_CONFIG_NAME
+ *      配置项名称（IM_CONFIG_NAME 枚举，如调度器核心、优先级等）
  * @param value
+ *      配置值
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_EXPORT_API IM_STATUS imconfig(IM_CONFIG_NAME name, uint64_t value);
 

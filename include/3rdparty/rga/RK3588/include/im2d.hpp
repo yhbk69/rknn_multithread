@@ -19,6 +19,12 @@
 #ifndef _im2d_hpp_
 #define _im2d_hpp_
 
+/*
+ * im2d C++ 扩展入口头文件。
+ * 在 im2d.h（C 接口）基础上额外包含 im2d_expand.h，
+ * 后者预留了 Android GraphicBuffer / AHardwareBuffer 等平台扩展接口。
+ */
+
 #include "im2d.h"
 #include "im2d_expand.h"
 

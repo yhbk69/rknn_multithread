@@ -28,12 +28,12 @@
 #include <pthread.h>
 
 
-// Enable thread safety attributes only with clang.
-// The attributes can be safely erased when compiling with other compilers.
+// 仅在使用 clang 编译器时启用线程安全注解。
+// 使用其他编译器编译时，这些注解会被安全地移除。
 #if defined(__clang__) && (!defined(SWIG))
 #define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
 #else
-#define THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op
+#define THREAD_ANNOTATION_ATTRIBUTE__(x)  // 空操作（非 clang 编译器时无效）
 #endif
 
 #define CAPABILITY(x) THREAD_ANNOTATION_ATTRIBUTE__(capability(x))
@@ -78,14 +78,13 @@
 class Condition;
 
 /*
- * NOTE: This class is for code that builds on Win32.  Its usage is
- * deprecated for code which doesn't build for Win32.  New code which
- * doesn't build for Win32 should use std::mutex and std::lock_guard instead.
+ * 注意：此类最初为 Win32 构建的代码设计。对于不在 Win32 上构建的代码，
+ * 建议使用 std::mutex 和 std::lock_guard 代替。
  *
- * Simple mutex class.  The implementation is system-dependent.
+ * 简单互斥锁类，基于 pthread_mutex_t 实现，实现方式依赖于系统。
  *
- * The mutex must be unlocked by the thread that locked it.  They are not
- * recursive, i.e. the same thread can't lock it multiple times.
+ * 互斥锁必须由锁定它的线程解锁。该锁不可重入，
+ * 即同一线程不能多次锁定它。
  */
 class CAPABILITY("mutex") Mutex {
   public:
@@ -99,17 +98,16 @@ class CAPABILITY("mutex") Mutex {
     explicit Mutex(int type, const char* name = nullptr);
     ~Mutex();
 
-    // lock or unlock the mutex
+    // 锁定或解锁互斥锁
     int32_t lock() ACQUIRE();
     void unlock() RELEASE();
 
-    // lock if possible; returns 0 on success, error otherwise
+    // 尝试锁定；成功返回 0，否则返回错误
     int32_t tryLock() TRY_ACQUIRE(0);
 
     int32_t timedLock(int64_t timeoutNs) TRY_ACQUIRE(0);
 
-    // Manages the mutex automatically. It'll be locked when Autolock is
-    // constructed and released when Autolock goes out of scope.
+    // 自动管理互斥锁。Autolock 构造时自动锁定，离开作用域时自动释放。
     class SCOPED_CAPABILITY Autolock {
       public:
         inline explicit Autolock(Mutex& mutex) ACQUIRE(mutex) : mLock(mutex) {
@@ -124,7 +122,7 @@ class CAPABILITY("mutex") Mutex {
 
       private:
         Mutex& mLock;
-        // Cannot be copied or moved - declarations only
+        // 不可复制或移动 — 仅声明
         Autolock(const Autolock&);
         Autolock& operator=(const Autolock&);
     };
@@ -132,7 +130,7 @@ class CAPABILITY("mutex") Mutex {
   private:
     friend class Condition;
 
-    // A mutex cannot be copied
+    // 互斥锁不可复制
     Mutex(const Mutex&);
     Mutex& operator=(const Mutex&);
 
@@ -183,9 +181,8 @@ inline int32_t Mutex::timedLock(int64_t timeoutNs) {
 // ---------------------------------------------------------------------------
 
 /*
- * Automatic mutex.  Declare one of these at the top of a function.
- * When the function returns, it will go out of scope, and release the
- * mutex.
+ * 自动互斥锁。在函数顶部声明一个 AutoMutex 实例，
+ * 当函数返回时，AutoMutex 离开作用域并自动释放锁。
  */
 
 typedef Mutex::Autolock AutoMutex;

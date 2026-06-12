@@ -21,50 +21,41 @@
 #include "im2d_type.h"
 
 /**
- * Create and config an rga ctx for rockit-ko
+ * 创建并配置 rockit-ko 的 RGA 上下文
  *
  * @param flags
- *      Some configuration flags for this job
+ *      上下文配置标志位
  *
- * @returns job id.
+ * @returns 上下文 ID
  */
 IM_EXPORT_API im_ctx_id_t imbegin(uint32_t flags);
 
 /**
- * Cancel and delete an rga ctx for rockit-ko
+ * 取消并删除 rockit-ko 的 RGA 上下文
  *
- * @param flags
- *      Some configuration flags for this job
+ * @param id
+ *      上下文 ID
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_EXPORT_API IM_STATUS imcancel(im_ctx_id_t id);
 
 /**
- * process for rockit-ko
+ * rockit-ko 模式的图像处理操作
  *
- * @param src
- *      The input source image and is also the foreground image in blend.
- * @param dst
- *      The output destination image and is also the foreground image in blend.
- * @param pat
- *      The foreground image, or a LUT table.
- * @param srect
- *      The rectangle on the src channel image that needs to be processed.
- * @param drect
- *      The rectangle on the dst channel image that needs to be processed.
- * @param prect
- *      The rectangle on the pat channel image that needs to be processed.
- * @param acquire_fence_fd
- * @param release_fence_fd
- * @param opt
- *      The image processing options configuration.
- * @param usage
- *      The image processing usage.
- * @param ctx_id
- *      ctx id
+ * @param src               输入源图像（混合操作中作为背景）
+ * @param dst               输出目标图像（混合操作中作为背景）
+ * @param pat               前景图像或 LUT 查找表
+ * @param srect             src 通道上需要处理的矩形区域
+ * @param drect             dst 通道上需要处理的矩形区域
+ * @param prect             pat 通道上需要处理的矩形区域
+ * @param acquire_fence_fd  输入同步 fence fd（确保输入缓冲区就绪）
+ * @param release_fence_fd  输出同步 fence fd（通知下游操作完成）
+ * @param opt               图像处理选项配置
+ * @param usage             图像处理模式标志
+ * @param ctx_id            上下文 ID
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 #ifdef __cplusplus
 IM_API IM_STATUS improcess(rga_buffer_t src, rga_buffer_t dst, rga_buffer_t pat,

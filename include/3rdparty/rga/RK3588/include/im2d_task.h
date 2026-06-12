@@ -23,74 +23,65 @@
 #ifdef __cplusplus
 
 /**
- * Create an rga job
+ * 创建 RGA job
  *
  * @param flags
- *      Some configuration flags for this job
+ *      job 配置标志位
  *
- * @returns job handle.
+ * @returns job 句柄
  */
 IM_API im_job_handle_t imbeginJob(uint64_t flags = 0);
 
 /**
- * Submit and run an rga job
+ * 提交并运行 RGA job
  *
  * @param job_handle
- *      This is the job handle that will be submitted.
+ *      要提交的 job 句柄
  * @param sync_mode
- *      run mode:
- *          IM_SYNC
- *          IM_ASYNC
- * @param acquire_fence_fd
- * @param release_fence_fd
+ *      运行模式:
+ *          IM_SYNC   - 同步模式，等待完成
+ *          IM_ASYNC  - 异步模式，立即返回
+ * @param acquire_fence_fd   输入同步 fence fd
+ * @param release_fence_fd   输出同步 fence fd
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imendJob(im_job_handle_t job_handle,
                           int sync_mode = IM_SYNC,
                           int acquire_fence_fd = 0, int *release_fence_fd = NULL);
 
 /**
- * Cancel and delete an rga job
+ * 取消并删除 RGA job
  *
  * @param job_handle
- *      This is the job handle that will be cancelled.
+ *      要取消的 job 句柄
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcancelJob(im_job_handle_t job_handle);
 
 /**
- * Add copy task
+ * 添加复制任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcopyTask(im_job_handle_t job_handle, const rga_buffer_t src, rga_buffer_t dst);
 
 /**
- * Add resize task
+ * 添加缩放任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param fx
- *      X-direction resize factor.
- * @param fy
- *      X-direction resize factor.
- * @param interpolation
- *      Interpolation formula(Only RGA1 support).
+ * @param job_handle     将任务插入到此 job 句柄中
+ * @param src            输入源图像
+ * @param dst            输出目标图像
+ * @param fx             X 方向缩放因子
+ * @param fy             Y 方向缩放因子
+ * @param interpolation  插值算法（仅 RGA1 支持）
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imresizeTask(im_job_handle_t job_handle,
                               const rga_buffer_t src, rga_buffer_t dst,
@@ -98,147 +89,98 @@ IM_API IM_STATUS imresizeTask(im_job_handle_t job_handle,
                               int interpolation = 0);
 
 /**
- * Add crop task
+ * 添加裁剪任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param rect
- *      The rectangle on the source image that needs to be cropped.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
+ * @param rect        需要裁剪的矩形区域
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcropTask(im_job_handle_t job_handle,
                             const rga_buffer_t src, rga_buffer_t dst, im_rect rect);
 
 /**
- * Add translate task
+ * 添加平移任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param x
- *      Output the coordinates of the starting point in the X-direction of the destination image.
- * @param y
- *      Output the coordinates of the starting point in the Y-direction of the destination image.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
+ * @param x           目标图像 X 方向起始坐标
+ * @param y           目标图像 Y 方向起始坐标
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imtranslateTask(im_job_handle_t job_handle,
                                  const rga_buffer_t src, rga_buffer_t dst, int x, int y);
 
 /**
- * Add format convert task
+ * 添加格式转换任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param sfmt
- *      The source image format.
- * @param dfmt
- *      The destination image format.
- * @param mode
- *      color space mode:
- *          IM_YUV_TO_RGB_BT601_LIMIT
- *          IM_YUV_TO_RGB_BT601_FULL
- *          IM_YUV_TO_RGB_BT709_LIMIT
- *          IM_RGB_TO_YUV_BT601_FULL
- *          IM_RGB_TO_YUV_BT601_LIMIT
- *          IM_RGB_TO_YUV_BT709_LIMIT
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
+ * @param sfmt        源图像格式
+ * @param dfmt        目标图像格式
+ * @param mode        色彩空间模式
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcvtcolorTask(im_job_handle_t job_handle,
                                 rga_buffer_t src, rga_buffer_t dst,
                                 int sfmt, int dfmt, int mode = IM_COLOR_SPACE_DEFAULT);
 
 /**
- * Add rotation task
+ * 添加旋转任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param rotation
- *      IM_HAL_TRANSFORM_ROT_90
- *      IM_HAL_TRANSFORM_ROT_180
- *      IM_HAL_TRANSFORM_ROT_270
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
+ * @param rotation    旋转角度
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imrotateTask(im_job_handle_t job_handle,
                               const rga_buffer_t src, rga_buffer_t dst, int rotation);
 
 /**
- * Add flip task
+ * 添加翻转任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param mode
- *      IM_HAL_TRANSFORM_FLIP_H
- *      IM_HAL_TRANSFORM_FLIP_V
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
+ * @param mode        翻转模式（水平/垂直）
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imflipTask(im_job_handle_t job_handle,
                             const rga_buffer_t src, rga_buffer_t dst, int mode);
 
 /**
- * Add blend(SRC + DST -> DST) task
+ * 添加双通道混合任务（SRC + DST -> DST）
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param fg_image
- *      The foreground image.
- * @param bg_image
- *      The background image, which is also the output destination image.
- * @param mode
- *      Port-Duff mode:
- *          IM_ALPHA_BLEND_SRC
- *          IM_ALPHA_BLEND_DST
- *          IM_ALPHA_BLEND_SRC_OVER
- *          IM_ALPHA_BLEND_DST_OVER
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param fg_image    前景图像
+ * @param bg_image    背景图像（也是输出目标）
+ * @param mode        Porter-Duff 混合模式
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imblendTask(im_job_handle_t job_handle,
                              const rga_buffer_t fg_image, rga_buffer_t bg_image,
                              int mode = IM_ALPHA_BLEND_SRC_OVER);
 
 /**
- * Add composite(SRCA + SRCB -> DST) task
+ * 添加三通道合成任务（SRCA + SRCB -> DST）
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param fg_image
- *      The foreground image.
- * @param bg_image
- *      The background image.
- * @param output_image
- *      The output destination image.
- * @param mode
- *      Port-Duff mode:
- *          IM_ALPHA_BLEND_SRC
- *          IM_ALPHA_BLEND_DST
- *          IM_ALPHA_BLEND_SRC_OVER
- *          IM_ALPHA_BLEND_DST_OVER
+ * @param job_handle    将任务插入到此 job 句柄中
+ * @param fg_image      前景图像
+ * @param bg_image      背景图像
+ * @param output_image  输出目标图像
+ * @param mode          Porter-Duff 混合模式
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcompositeTask(im_job_handle_t job_handle,
                                  const rga_buffer_t fg_image, const rga_buffer_t bg_image,
@@ -246,129 +188,97 @@ IM_API IM_STATUS imcompositeTask(im_job_handle_t job_handle,
                                  int mode = IM_ALPHA_BLEND_SRC_OVER);
 
 /**
- * Add color key task
+ * 添加色键抠图任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param fg_image
- *      The foreground image.
- * @param bg_image
- *      The background image, which is also the output destination image.
- * @param colorkey_range
- *      The range of color key.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param fg_image    前景图像
+ * @param bg_image    背景图像（也是输出目标）
+ * @param range       色键范围
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imcolorkeyTask(im_job_handle_t job_handle,
                                 const rga_buffer_t fg_image, rga_buffer_t bg_image,
                                 im_colorkey_range range, int mode = IM_ALPHA_COLORKEY_NORMAL);
 
 /**
- * Add OSD task
+ * 添加 OSD 叠加任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param osd
- *      The osd text block.
- * @param dst
- *      The background image.
- * @param osd_rect
- *      The rectangle on the source image that needs to be OSD.
- * @param osd_config
- *      osd mode configuration.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param osd         OSD 文本块图像
+ * @param bg_image    背景图像
+ * @param osd_rect    需要叠加 OSD 的矩形区域
+ * @param osd_config  OSD 模式配置
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imosdTask(im_job_handle_t job_handle,
                            const rga_buffer_t osd,const rga_buffer_t bg_image,
                            const im_rect osd_rect, im_osd_t *osd_config);
 
 /**
- * Add nn quantize task
+ * 添加 NN 量化任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param nninfo
- *      nn configuration
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
+ * @param nn_info     NN 量化配置
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imquantizeTask(im_job_handle_t job_handle,
                                 const rga_buffer_t src, rga_buffer_t dst, im_nn_t nn_info);
 
 /**
- * Add ROP task
+ * 添加光栅操作（ROP）任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param rop_code
- *      The ROP opcode.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
+ * @param rop_code    ROP 操作码
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imropTask(im_job_handle_t job_handle,
                            const rga_buffer_t src, rga_buffer_t dst, int rop_code);
 
 /**
- * Add color fill task
+ * 添加颜色填充任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param dst
- *      The output destination image.
- * @param rect
- *      The rectangle on the source image that needs to be filled with color.
- * @param color
- *      The fill color value.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param dst         输出目标图像
+ * @param rect        需要填充颜色的矩形区域
+ * @param color       填充颜色值
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imfillTask(im_job_handle_t job_handle, rga_buffer_t dst, im_rect rect, uint32_t color);
 
 /**
- * Add color fill task array
+ * 添加批量颜色填充任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param dst
- *      The output destination image.
- * @param rect_array
- *      The rectangle arrays on the source image that needs to be filled with color.
- * @param array_size
- *      The size of rectangular area arrays.
- * @param color
- *      The fill color value.
+ * @param job_handle   将任务插入到此 job 句柄中
+ * @param dst          输出目标图像
+ * @param rect_array   需要填充颜色的矩形区域数组
+ * @param array_size   矩形区域数组的大小
+ * @param color        填充颜色值
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imfillTaskArray(im_job_handle_t job_handle,
                                  rga_buffer_t dst,
                                  im_rect *rect_array, int array_size, uint32_t color);
 
 /**
- * Add fill rectangle task
+ * 添加绘制矩形任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param dst
- *      The output destination image.
- * @param rect
- *      The rectangle on the source image that needs to be filled with color.
- * @param color
- *      The fill color value.
- * @param thickness
- *      Thickness of lines that make up the rectangle. Negative values, like -1,
- *      mean that the function has to draw a filled rectangle.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param dst         输出目标图像
+ * @param rect        矩形区域
+ * @param color       矩形颜色值
+ * @param thickness   线条粗细，负值（如 -1）表示实心矩形
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imrectangleTask(im_job_handle_t job_handle,
                                  rga_buffer_t dst,
@@ -376,23 +286,16 @@ IM_API IM_STATUS imrectangleTask(im_job_handle_t job_handle,
                                  uint32_t color, int thickness);
 
 /**
- * Add fill rectangle task array
+ * 添加批量绘制矩形任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param dst
- *      The output destination image.
- * @param rect_array
- *      The rectangle arrays on the source image that needs to be filled with color.
- * @param array_size
- *      The size of rectangular area arrays.
- * @param color
- *      The fill color value.
- * @param thickness
- *      Thickness of lines that make up the rectangle. Negative values, like -1,
- *      mean that the function has to draw a filled rectangle.
+ * @param job_handle   将任务插入到此 job 句柄中
+ * @param dst          输出目标图像
+ * @param rect_array   矩形区域数组
+ * @param array_size   矩形区域数组的大小
+ * @param color        矩形颜色值
+ * @param thickness    线条粗细，负值（如 -1）表示实心矩形
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS imrectangleTaskArray(im_job_handle_t job_handle,
                                       rga_buffer_t dst,
@@ -400,92 +303,60 @@ IM_API IM_STATUS imrectangleTaskArray(im_job_handle_t job_handle,
                                       uint32_t color, int thickness);
 
 /**
- * Add mosaic task
+ * 添加马赛克任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param image
- *      The output destination image.
- * @param rect
- *      The rectangle on the source image that needs to be mosaicked.
- * @param mosaic_mode
- *      mosaic block width configuration:
- *          IM_MOSAIC_8
- *          IM_MOSAIC_16
- *          IM_MOSAIC_32
- *          IM_MOSAIC_64
- *          IM_MOSAIC_128
+ * @param job_handle   将任务插入到此 job 句柄中
+ * @param image        输出目标图像
+ * @param rect         需要打马赛克的矩形区域
+ * @param mosaic_mode  马赛克块大小配置
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS immosaicTask(im_job_handle_t job_handle,
                               const rga_buffer_t image, im_rect rect, int mosaic_mode);
 
 /**
- * Add mosaic task
+ * 添加批量马赛克任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param image
- *      The output destination image.
- * @param rect_array
- *      The rectangle arrays on the source image that needs to be filled with color.
- * @param array_size
- *      The size of rectangular area arrays.
- * @param mosaic_mode
- *      mosaic block width configuration:
- *          IM_MOSAIC_8
- *          IM_MOSAIC_16
- *          IM_MOSAIC_32
- *          IM_MOSAIC_64
- *          IM_MOSAIC_128
+ * @param job_handle   将任务插入到此 job 句柄中
+ * @param image        输出目标图像
+ * @param rect_array   需要打马赛克的矩形区域数组
+ * @param array_size   矩形区域数组的大小
+ * @param mosaic_mode  马赛克块大小配置
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS immosaicTaskArray(im_job_handle_t job_handle,
                                    const rga_buffer_t image,
                                    im_rect *rect_array, int array_size, int mosaic_mode);
 
 /**
- * Add palette task
+ * 添加调色板任务
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image.
- * @param dst
- *      The output destination image.
- * @param lut
- *      The LUT table.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像
+ * @param dst         输出目标图像
+ * @param lut         LUT 查找表
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS impaletteTask(im_job_handle_t job_handle,
                                rga_buffer_t src, rga_buffer_t dst, rga_buffer_t lut);
 
 /**
- * Add process task
+ * 添加复合处理任务（支持自定义操作组合）
  *
- * @param job_handle
- *      Insert the task into the job handle.
- * @param src
- *      The input source image and is also the foreground image in blend.
- * @param dst
- *      The output destination image and is also the foreground image in blend.
- * @param pat
- *      The foreground image, or a LUT table.
- * @param srect
- *      The rectangle on the src channel image that needs to be processed.
- * @param drect
- *      The rectangle on the dst channel image that needs to be processed.
- * @param prect
- *      The rectangle on the pat channel image that needs to be processed.
- * @param opt
- *      The image processing options configuration.
- * @param usage
- *      The image processing usage.
+ * @param job_handle  将任务插入到此 job 句柄中
+ * @param src         输入源图像（混合中作为背景）
+ * @param dst         输出目标图像（混合中作为背景）
+ * @param pat         前景图像或 LUT 查找表
+ * @param srect       src 通道处理矩形区域
+ * @param drect       dst 通道处理矩形区域
+ * @param prect       pat 通道处理矩形区域
+ * @param opt_ptr     图像处理选项配置
+ * @param usage       图像处理模式标志
  *
- * @returns success or else negative error code.
+ * @returns 成功返回 IM_STATUS_SUCCESS，否则返回负错误码
  */
 IM_API IM_STATUS improcessTask(im_job_handle_t job_handle,
                                rga_buffer_t src, rga_buffer_t dst, rga_buffer_t pat,

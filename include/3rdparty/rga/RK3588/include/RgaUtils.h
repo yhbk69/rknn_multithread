@@ -20,12 +20,21 @@
 #define _rga_utils_h_
 
 // -------------------------------------------------------------------------------
+// 以下为 RGA 调试与辅助工具函数
+//
+/* 根据像素格式获取每像素位数（bits per pixel） */
 float get_bpp_from_format(int format);
+/* 根据像素格式获取每像素步长（bytes per pixel） */
 int get_perPixel_stride_from_format(int format);
+/* 从文件中读取图像数据到缓冲区（用于输入测试） */
 int get_buf_from_file(void *buf, int f, int sw, int sh, int index);
+/* 将缓冲区数据输出到文件（用于调试验证） */
 int output_buf_data_to_file(void *buf, int f, int sw, int sh, int index);
+/* 将 RGA 像素格式枚举值转换为可读字符串 */
 const char *translate_format_str(int format);
+/* 从文件读取 FBC（帧缓冲压缩）格式数据到缓冲区 */
 int get_buf_from_file_FBC(void *buf, int f, int sw, int sh, int index);
+/* 将缓冲区数据以 FBC 格式输出到文件 */
 int output_buf_data_to_file_FBC(void *buf, int f, int sw, int sh, int index);
 #endif
 

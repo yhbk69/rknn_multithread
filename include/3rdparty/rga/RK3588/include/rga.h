@@ -78,7 +78,7 @@ typedef enum _Rga_SURF_FORMAT {
     RK_FORMAT_YCrCb_420_SP_10B = 0x21 << 8,
     RK_FORMAT_YCbCr_422_SP_10B = 0x22 << 8,
     RK_FORMAT_YCrCb_422_SP_10B = 0x23 << 8,
-    /* For compatibility with misspellings */
+    /* 兼容旧版拼写错误 */
     RK_FORMAT_YCbCr_422_10b_SP = RK_FORMAT_YCbCr_422_SP_10B,
     RK_FORMAT_YCrCb_422_10b_SP = RK_FORMAT_YCrCb_422_SP_10B,
 
@@ -124,7 +124,7 @@ enum {
     RGA2_SCHEDULER_CORE0    = 1 << 2,
 };
 
-/* RGA3 rd_mode */
+/* RGA3 读取模式 */
 enum
 {
     raster_mode             = 0x1 << 0,
