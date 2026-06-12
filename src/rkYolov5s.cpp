@@ -4,6 +4,7 @@
 
 #include "postprocess.h"
 #include "preprocess.h"
+#include "config_loader.hpp"
 
 #include "opencv2/core/core.hpp"
 #include "opencv2/highgui/highgui.hpp"
@@ -116,8 +117,10 @@ static int saveFloat(const char *file_name, float *output, int element_size)
 rkYolov5s::rkYolov5s(const std::string &model_path)
 {
     this->model_path = model_path;
-    nms_threshold = NMS_THRESH;      // NMS(非极大值抑制)阈值，用于去除重叠框
-    box_conf_threshold = BOX_THRESH; // 置信度阈值，低于此值的检测框会被过滤
+    // 从配置加载阈值
+    AppConfig cfg = load_config();
+    nms_threshold = cfg.nms_threshold;
+    box_conf_threshold = cfg.box_threshold;
 }
 
 /**
@@ -262,7 +265,7 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img)
 
     // BGR转RGB(RKNN模型期望RGB输入)
     cv::Mat img;
-    cv::cvtColor(orig_img, cv::COLOR_BGR2RGB);
+    cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
     img_width = img.cols;
     img_height = img.rows;
 

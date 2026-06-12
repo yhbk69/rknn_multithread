@@ -7,6 +7,8 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include "rkYolov5s.hpp"
 #include "rknnPool.hpp"
+#include "config_loader.hpp"
+#include "postprocess.h"
 
 int main(int argc, char **argv)
 {
@@ -24,10 +26,16 @@ int main(int argc, char **argv)
     // 参数2: 视频文件路径或摄像头序号(0, 1, 2...)
     char *vedio_name = argv[2];
 
-    // 初始化RKNN线程池，默认3个线程
-    // 每个线程会加载一个独立的模型实例，充分利用RK3588的3个NPU核心
-    int threadNum = 3;
-    rknnPool<rkYolov5s, cv::Mat, cv::Mat> testPool(model_name, threadNum);
+    // 加载配置
+    AppConfig config = load_config();
+    config.model_path = model_name;
+    config.resolve_label_path();
+
+    // 初始化标签路径（供 postprocess 使用）
+    initLabelPath(model_name);
+
+    // 初始化RKNN线程池
+    rknnPool<rkYolov5s, cv::Mat, cv::Mat> testPool(model_name, config.thread_num);
     if (testPool.init() != 0)
     {
         printf("rknnPool init fail!\n");
@@ -71,7 +79,7 @@ int main(int argc, char **argv)
         // 等待推理结果
         // 前threadNum帧不需要等待，因为线程池还在填充中
         // get()是阻塞的，会等待直到对应的推理完成
-        if (frames >= threadNum && testPool.get(img) != 0)
+        if (frames >= config.thread_num && testPool.get(img) != 0)
             break;
 
         // 每30帧计算一次实时帧率

@@ -35,27 +35,58 @@ find_package(OpenCV REQUIRED)
 
 set(CMAKE_INSTALL_RPATH "lib")
 
+# Qt5 (optional)
+option(ENABLE_QT "Enable Qt GUI support" OFF)
+if(ENABLE_QT)
+  find_package(Qt5 REQUIRED COMPONENTS Core Widgets Gui)
+  set(CMAKE_AUTOMOC ON)
+  set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR}/install/rknn_yolov5_qt_demo_${CMAKE_SYSTEM_NAME})
+endif()
+
 
 # rknn_yolov5_demo
 include_directories( ${CMAKE_SOURCE_DIR}/include)
 
-add_executable(rknn_yolov5_demo
-        src/main.cpp
-        src/postprocess.cpp
-        src/preprocess.cpp
-        src/rkYolov5s.cpp
-)
-
-target_link_libraries(rknn_yolov5_demo
-  ${RKNN_RT_LIB}
-  ${OpenCV_LIBS}
-  ${RGA_LIB}
-)
+if(ENABLE_QT)
+  add_executable(rknn_yolov5_qt_demo
+          src/qt_main.cpp
+          src/MainWindow.cpp
+          src/postprocess.cpp
+          src/preprocess.cpp
+          src/rkYolov5s.cpp
+  )
+  target_link_libraries(rknn_yolov5_qt_demo
+    ${RKNN_RT_LIB}
+    ${OpenCV_LIBS}
+    ${RGA_LIB}
+    Qt5::Core
+    Qt5::Widgets
+    Qt5::Gui
+  )
+else()
+  add_executable(rknn_yolov5_demo
+          src/main.cpp
+          src/postprocess.cpp
+          src/preprocess.cpp
+          src/rkYolov5s.cpp
+  )
+  target_link_libraries(rknn_yolov5_demo
+    ${RKNN_RT_LIB}
+    ${OpenCV_LIBS}
+    ${RGA_LIB}
+  )
+endif()
 
 
 # install target and libraries
-set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR}/install/rknn_yolov5_demo_${CMAKE_SYSTEM_NAME})
-install(TARGETS rknn_yolov5_demo DESTINATION ./)
+if(ENABLE_QT)
+  set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR}/install/rknn_yolov5_qt_demo_${CMAKE_SYSTEM_NAME})
+  install(TARGETS rknn_yolov5_qt_demo DESTINATION ./)
+else()
+  set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR}/install/rknn_yolov5_demo_${CMAKE_SYSTEM_NAME})
+  install(TARGETS rknn_yolov5_demo DESTINATION ./)
+endif()
 install(PROGRAMS ${RKNN_RT_LIB} DESTINATION lib)
 install(PROGRAMS ${RGA_LIB} DESTINATION lib)
 install(DIRECTORY model DESTINATION ./)
+install(FILES ${CMAKE_SOURCE_DIR}/config.json DESTINATION ./)
