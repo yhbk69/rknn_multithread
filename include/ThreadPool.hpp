@@ -173,7 +173,7 @@ namespace dpool
         }
 
         // 空闲线程超时时间（单位：秒），超过此时间无任务可执行的工作线程将自动退出
-        static constexpr size_t WAIT_SECONDS = 2;
+        enum { WAIT_SECONDS = 2 };
 
         bool quit_;                // 线程池是否已关闭（析构时设为 true）
         size_t currentThreads_;    // 当前活跃线程数量
@@ -186,8 +186,6 @@ namespace dpool
         std::queue<ThreadID> finishedThreadIDs_;            // 已结束线程的 ID 队列，等待回收
         std::unordered_map<ThreadID, Thread> threads_;      // 线程表：线程 ID -> 线程对象的映射
     };
-
-    constexpr size_t ThreadPool::WAIT_SECONDS;
 
 } // namespace dpool
 

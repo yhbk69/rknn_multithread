@@ -262,7 +262,7 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img)
 
     // BGR转RGB(RKNN模型期望RGB输入)
     cv::Mat img;
-    cv::cvtColor(orig_img, cv::COLOR_BGR2RGB);
+    cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
     img_width = img.cols;
     img_height = img.rows;
 
