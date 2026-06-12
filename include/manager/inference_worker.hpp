@@ -38,6 +38,7 @@ public:
     void setAlertClassIds(const std::vector<int>& ids) { alertClassIds_ = ids; }
     /// 设置报警输出目录
     void setOutputDir(const QString& dir) { outputDir_ = dir; }
+    void setClassNames(const std::vector<std::string>& n) { classNames_ = n; }
 
 public slots:
     void setBatchInference(bool) {}
@@ -64,6 +65,7 @@ private:
     // 报警状态
     std::vector<int> alertClassIds_;      // 触发报警的类别 ID
     QString outputDir_ = "output";
+    std::vector<std::string> classNames_;  // 类别名称
     std::deque<std::shared_ptr<cv::Mat>> frameBuffer_;  // 环形缓冲区
     std::mutex bufferMutex_;
     std::unordered_map<int, std::chrono::steady_clock::time_point> lastAlertTime_;

@@ -14,6 +14,7 @@
 #include <QToolBar>
 #include <QMenu>
 #include <QCloseEvent>
+#include <fstream>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), confThreshold_(0.25f), nmsThreshold_(0.45f)
@@ -70,6 +71,9 @@ MainWindow::MainWindow(QWidget* parent)
 
     modelManager_ = std::make_unique<ModelManager>();
     cameraManager_ = std::make_unique<CameraManager>();
+
+    // 加载标签文件
+    loadLabels("model/ppe_11_labels.txt");
 
     // MJPEG streamer
     mjpegStreamer_ = std::make_unique<MjpegStreamer>();
@@ -224,6 +228,15 @@ void MainWindow::processSingleImage(const std::string& path) {
 }
 
 // Stubs
+void MainWindow::loadLabels(const std::string& path) {
+    std::ifstream f(path);
+    std::string line;
+    while (std::getline(f, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty()) classNames_.push_back(line);
+    }
+    log("system", QString("Loaded %1 labels from %2").arg(classNames_.size()).arg(QString::fromStdString(path)));
+}
 void MainWindow::onAddCamera() {} void MainWindow::onRemoveCamera(int) {} void MainWindow::onOpenFolder() {}
 void MainWindow::onSettings() {} void MainWindow::onBatchInferenceToggled(bool) {} void MainWindow::onStartDetection() {}
 void MainWindow::onAlertSaved(int,const QString&,const QString&,const QString&) {}

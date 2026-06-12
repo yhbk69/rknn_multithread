@@ -144,6 +144,8 @@ private:
     std::unordered_map<int, QString> cameraSources_;
     std::unordered_map<int, QString> cameraAliases_;
     int prevActiveCam_ = -1;
+    std::vector<std::string> classNames_;
+    void loadLabels(const std::string& path);
 };
 
 #endif // MAINWINDOW_HPP

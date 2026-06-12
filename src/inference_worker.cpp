@@ -67,7 +67,9 @@ void InferenceWorker::process(std::unique_ptr<IVideoSource> source,
                 cv::Point(static_cast<int>(det.x + det.w), static_cast<int>(det.y + det.h)),
                 color, 2);
             char label[128];
-            snprintf(label, sizeof(label), "class %d: %.2f", det.class_id, det.conf);
+            const char* name = (det.class_id < (int)classNames_.size()) 
+                ? classNames_[det.class_id].c_str() : "?";
+            snprintf(label, sizeof(label), "%s: %.2f", name, det.conf);
             cv::putText(display, label,
                 cv::Point(static_cast<int>(det.x), static_cast<int>(det.y) - 5),
                 cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
