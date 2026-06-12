@@ -31,6 +31,7 @@
 *.app
 
 *.mp4
+build*/
 /build
 /install
 /.vscode
@@ -38,3 +39,7 @@
 *.png
 *.jpg
 *.mp4
+
+
+PROJECT_PLAN.md
+others/
