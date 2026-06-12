@@ -39,7 +39,7 @@ build*/
 *.png
 *.jpg
 *.mp4
-
+*.onnx
 
 PROJECT_PLAN.md
 others/
