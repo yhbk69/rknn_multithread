@@ -75,11 +75,11 @@ namespace dpool
         // 若已达上限则任务排队等待空闲线程处理。
         template <typename Func, typename... Ts>
         auto submit(Func &&func, Ts &&...params)
-            -> std::future<typename std::result_of<Func(Ts...)>::type>
+            -> std::future<typename std::invoke_result_t<Func, Ts...>>
         {
             auto execute = std::bind(std::forward<Func>(func), std::forward<Ts>(params)...);
 
-            using ReturnType = typename std::result_of<Func(Ts...)>::type;
+            using ReturnType = typename std::invoke_result_t<Func, Ts...>;
             using PackagedTask = std::packaged_task<ReturnType()>;
 
             auto task = std::make_shared<PackagedTask>(std::move(execute));

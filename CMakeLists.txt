@@ -8,12 +8,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
     set(PLATFORM_WINDOWS TRUE)
     message(STATUS "Platform: Windows")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
     set(PLATFORM_RK3588 TRUE)
-    message(STATUS "Platform: RK3588")
+    message(STATUS "Platform: RK3588 (Linux aarch64)")
 else()
     set(PLATFORM_LINUX TRUE)
-    message(STATUS "Platform: Linux (generic)")
+    message(STATUS "Platform: Linux (generic) - processor: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
 # ---- Windows 编译选项 ----
@@ -31,6 +31,10 @@ endif()
 option(ENABLE_QT "Enable Qt GUI support" ON)
 
 if(ENABLE_QT)
+    set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTOUIC ON)
+    set(CMAKE_AUTORCC ON)
+    
     if(PLATFORM_WINDOWS)
         # 自动检测或在命令行指定: -DQt5_DIR="C:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5"
         find_package(Qt5 REQUIRED COMPONENTS Widgets WebSockets)
@@ -83,6 +87,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include/manager)
 include_directories(${CMAKE_SOURCE_DIR}/include/io)
 include_directories(${CMAKE_SOURCE_DIR}/include/pipeline)
 include_directories(${CMAKE_SOURCE_DIR}/include/server)
+include_directories(${CMAKE_SOURCE_DIR}/src)  # for rk/ headers
 if(PLATFORM_WINDOWS)
     include_directories(${ONNXRUNTIME_INCLUDE_DIR})
 endif()
@@ -123,16 +128,23 @@ set(WIN_SOURCES
     include/core/logger.hpp
 )
 
-set(RK3588_SOURCES
-    src/main.cpp
+set(RK3588_COMMON
     src/postprocess.cpp
     src/preprocess.cpp
     src/rkYolov5s.cpp
 )
 
-if(ENABLE_QT AND PLATFORM_RK3588)
-    list(APPEND RK3588_SOURCES src/MainWindow.cpp)
-endif()
+set(RK3588_QT_SOURCES
+    ${RK3588_COMMON}
+    src/rk/main_rk.cpp
+    src/rk/mainwindow.cpp
+    src/rk/mainwindow.hpp
+)
+
+set(RK3588_CLI_SOURCES
+    ${RK3588_COMMON}
+    src/main.cpp
+)
 
 # ---- 可执行文件 ----
 if(PLATFORM_WINDOWS)
@@ -155,23 +167,35 @@ if(PLATFORM_WINDOWS)
     )
     message(STATUS "Target: yolo_win.exe")
 
-elseif(PLATFORM_RK3588)
+    elseif(PLATFORM_RK3588)
+    find_package(Threads REQUIRED)
     if(ENABLE_QT)
-        add_executable(yolo_rk3588_qt ${RK3588_SOURCES})
+        add_executable(yolo_rk3588_qt ${RK3588_QT_SOURCES})
         target_link_libraries(yolo_rk3588_qt
             ${RKNN_RT_LIB}
             ${OpenCV_LIBS}
             ${RGA_LIB}
             Qt5::Core Qt5::Widgets Qt5::Gui
+            Threads::Threads
         )
         message(STATUS "Target: yolo_rk3588_qt")
+
+        install(TARGETS yolo_rk3588_qt DESTINATION rknn_yolov5_qt_demo_Linux)
+        install(FILES ${CMAKE_SOURCE_DIR}/config.json DESTINATION rknn_yolov5_qt_demo_Linux)
+        install(DIRECTORY ${CMAKE_SOURCE_DIR}/model DESTINATION rknn_yolov5_qt_demo_Linux)
+        install(FILES ${RKNN_RT_LIB} ${RGA_LIB} DESTINATION rknn_yolov5_qt_demo_Linux/lib)
     else()
-        add_executable(yolo_rk3588 ${RK3588_SOURCES})
+        add_executable(yolo_rk3588 ${RK3588_CLI_SOURCES})
         target_link_libraries(yolo_rk3588
             ${RKNN_RT_LIB}
             ${OpenCV_LIBS}
             ${RGA_LIB}
         )
         message(STATUS "Target: yolo_rk3588")
+
+        install(TARGETS yolo_rk3588 DESTINATION rknn_yolov5_demo_Linux)
+        install(FILES ${CMAKE_SOURCE_DIR}/config.json DESTINATION rknn_yolov5_demo_Linux)
+        install(DIRECTORY ${CMAKE_SOURCE_DIR}/model DESTINATION rknn_yolov5_demo_Linux)
+        install(FILES ${RKNN_RT_LIB} ${RGA_LIB} DESTINATION rknn_yolov5_demo_Linux/lib)
     endif()
 endif()

@@ -84,9 +84,19 @@ int resize_rga(rga_buffer_t &src, rga_buffer_t &dst, const cv::Mat &image, cv::M
     size_t target_height = target_size.height;
 
     // 将OpenCV Mat包装为RGA缓冲区格式
-    // wrapbuffer_virtualaddr: 使用虚拟地址包装，避免数据拷贝
     src = wrapbuffer_virtualaddr((void *)image.data, img_width, img_height, RK_FORMAT_RGB_888);
     dst = wrapbuffer_virtualaddr((void *)resized_image.data, target_width, target_height, RK_FORMAT_RGB_888);
+
+    // 设置源和目标矩形为全图
+    src_rect.x = 0;
+    src_rect.y = 0;
+    src_rect.width = img_width;
+    src_rect.height = img_height;
+
+    dst_rect.x = 0;
+    dst_rect.y = 0;
+    dst_rect.width = target_width;
+    dst_rect.height = target_height;
 
     // 检查RGA操作是否合法(尺寸、格式等)
     int ret = imcheck(src, dst, src_rect, dst_rect);
@@ -98,5 +108,10 @@ int resize_rga(rga_buffer_t &src, rga_buffer_t &dst, const cv::Mat &image, cv::M
 
     // 执行硬件加速缩放
     IM_STATUS STATUS = imresize(src, dst);
+    if (STATUS != IM_STATUS_SUCCESS)
+    {
+        fprintf(stderr, "imresize failed: %s\n", imStrError(STATUS));
+        return -1;
+    }
     return 0;
 }

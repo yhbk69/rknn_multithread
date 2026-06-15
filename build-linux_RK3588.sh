@@ -17,7 +17,8 @@ cd ${BUILD_DIR}
 cmake ../.. \
   -DCMAKE_SYSTEM_NAME=Linux \
   -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-  -DENABLE_QT=OFF
+  -DENABLE_QT=OFF \
+  -DCMAKE_INSTALL_PREFIX=${ROOT_PWD}/install
 
 make -j$(nproc)
 make install
