@@ -29,7 +29,13 @@
 #include <QProgressBar>
 #include <QApplication>
 #include <QScreen>
+#include <QSettings>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsPixmapItem>
+#include <QShortcut>
 #include <atomic>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -48,12 +54,18 @@
 class DetectThread : public QThread {
     Q_OBJECT
 public:
-    DetectThread(const std::string& model_path, const std::string& video_path, int thread_num = 3)
-        : model_path_(model_path), video_path_(video_path), thread_num_(thread_num), running_(true) {
+    DetectThread(const std::string& model_path, const std::string& video_path,
+                 int thread_num = 3, float conf_threshold = 0.25f, float nms_threshold = 0.45f)
+        : model_path_(model_path), video_path_(video_path), thread_num_(thread_num),
+          conf_threshold_(conf_threshold), nms_threshold_(nms_threshold), running_(true) {
         initLabelPath(model_path.c_str());
     }
 
     void stop() { running_.store(false); }
+    void pause() { paused_.store(true); }
+    void resume() { paused_.store(false); }
+    void stepFrame() { step_once_.store(true); paused_.store(false); }
+    bool isPaused() const { return paused_.load(); }
     void set_thread_num(int n) { thread_num_ = n; }
 
 signals:
@@ -70,6 +82,8 @@ protected:
             emit finished();
             return;
         }
+        pool->set_thresholds(conf_threshold_, nms_threshold_);
+        printf("[DetectThread] Thresholds applied: conf=%.2f, nms=%.2f\n", conf_threshold_, nms_threshold_);
 
         cv::VideoCapture capture;
         if (video_path_.length() == 1)
@@ -95,6 +109,16 @@ protected:
         double current_fps = 0.0;
 
         while (running_.load()) {
+            // 暂停/单帧步进检查
+            while (paused_.load() && running_.load()) {
+                if (step_once_.load()) {
+                    step_once_.store(false);
+                    break;
+                }
+                QThread::msleep(50);
+            }
+            if (!running_.load()) break;
+
             cv::Mat img;
             if (!capture.read(img)) break;
 
@@ -148,7 +172,11 @@ private:
     std::string model_path_;
     std::string video_path_;
     int thread_num_;
+    float conf_threshold_;
+    float nms_threshold_;
     std::atomic<bool> running_;
+    std::atomic<bool> paused_{false};
+    std::atomic<bool> step_once_{false};
 };
 
 // ============================================================
@@ -176,6 +204,10 @@ private slots:
     void onClearLog();
     void onCameraSelected(int index);
     void onRefreshCameras();
+    void onPauseToggle();
+    void onStepFrame();
+    void onScreenshot();
+    void onRecordToggle();
 
 private:
     void log(const QString& category, const QString& message);
@@ -186,10 +218,14 @@ private:
     void setupStyle();
     void detectCameras();
     QString formatSize(qint64 bytes);
+    void saveSettings();
+    void restoreSettings();
 
     // --- 左侧面板 ---
     // 检测显示
-    QLabel* display_label_;
+    QGraphicsView* display_view_;
+    QGraphicsScene* display_scene_;
+    QGraphicsPixmapItem* pixmap_item_;
     QLabel* display_overlay_;       // 叠加 FPS/状态信息
 
     // 控制区
@@ -200,6 +236,10 @@ private:
     QPushButton* load_btn_;
     QPushButton* start_btn_;
     QPushButton* stop_btn_;
+    QPushButton* pause_btn_;
+    QPushButton* step_btn_;
+    QPushButton* screenshot_btn_;
+    QPushButton* record_btn_;
     QSpinBox* thread_spin_;
     QSlider* conf_slider_;
     QSlider* nms_slider_;
@@ -209,6 +249,7 @@ private:
     // --- 右侧面板 ---
     // 状态信息
     QLabel* model_status_label_;
+    QLabel* model_status_left_label_;
     QLabel* model_name_label_;
     QLabel* fps_label_;
     QLabel* resolution_label_;
@@ -234,6 +275,9 @@ private:
     float nms_threshold_ = 0.45f;
     std::string model_path_;
     std::string video_path_;
+    QImage last_frame_;
+    bool recording_ = false;
+    std::unique_ptr<cv::VideoWriter> video_writer_;
 };
 
 #endif // RK_MAINWINDOW_HPP

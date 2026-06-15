@@ -51,6 +51,12 @@ public:
     /* 构造函数：指定模型文件路径，创建推理类实例 */
     rkYolov5s(const std::string &model_path);
 
+    /* 动态设置阈值（运行时由 GUI 传入） */
+    void set_thresholds(float conf, float nms) {
+        box_conf_threshold = conf;
+        nms_threshold = nms;
+    }
+
     /*
      * 初始化模型：加载模型数据、创建 RKNN 上下文、配置输入输出张量属性
      *

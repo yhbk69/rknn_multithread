@@ -38,6 +38,8 @@ public:
     int put(inputType inputData);
     // 获取最早的推理结果（阻塞等待）
     int get(outputType &outputData);
+    // 动态设置所有模型实例的阈值
+    void set_thresholds(float conf, float nms);
     ~rknnPool();  // 析构函数：等待所有剩余推理任务完成后释放资源
 };
 
@@ -111,6 +113,15 @@ int rknnPool<rknnModel, inputType, outputType>::get(outputType &outputData)
     outputData = futs.front().get();
     futs.pop();
     return 0;
+}
+
+// 动态设置所有模型实例的阈值（需 rknnModel 提供 set_thresholds 方法）
+template <typename rknnModel, typename inputType, typename outputType>
+void rknnPool<rknnModel, inputType, outputType>::set_thresholds(float conf, float nms)
+{
+    for (auto& model : models) {
+        model->set_thresholds(conf, nms);
+    }
 }
 
 // 析构函数：等待所有剩余推理任务完成后释放资源
