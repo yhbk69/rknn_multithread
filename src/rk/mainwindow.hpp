@@ -1,6 +1,6 @@
 /*
  * mainwindow.hpp - RK3588 Qt GUI 主窗口
- * 仿照 Windows 版本，适配 RKNN 推理引擎
+ * 16:9 自适应布局，左右分栏
  */
 
 #ifndef RK_MAINWINDOW_HPP
@@ -23,6 +23,12 @@
 #include <QGroupBox>
 #include <QStatusBar>
 #include <QPixmap>
+#include <QSplitter>
+#include <QListWidget>
+#include <QComboBox>
+#include <QProgressBar>
+#include <QApplication>
+#include <QScreen>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -37,7 +43,7 @@
 #include "postprocess.h"
 
 // ============================================================
-// 检测工作线程：在后台线程中运行 RKNN 推理
+// 检测工作线程
 // ============================================================
 class DetectThread : public QThread {
     Q_OBJECT
@@ -52,6 +58,7 @@ public:
 
 signals:
     void frameReady(const QImage& image, double fps);
+    void statsUpdated(int framesProcessed, double avgFps, double inferenceTime);
     void finished();
     void error(const QString& msg);
 
@@ -59,7 +66,7 @@ protected:
     void run() override {
         auto pool = std::make_unique<rknnPool<rkYolov5s, cv::Mat, cv::Mat>>(model_path_.c_str(), thread_num_);
         if (pool->init() != 0) {
-            emit error("rknnPool init fail!");
+            emit error("rknnPool init failed!");
             emit finished();
             return;
         }
@@ -71,7 +78,7 @@ protected:
             capture.open(video_path_);
 
         if (!capture.isOpened()) {
-            emit error("Cannot open video!");
+            emit error("Cannot open video/camera: " + QString::fromStdString(video_path_));
             emit finished();
             return;
         }
@@ -91,14 +98,19 @@ protected:
             cv::Mat img;
             if (!capture.read(img)) break;
 
-            if (pool->put(img) != 0) break;
+            long long infer_start = get_time_ms();
 
+            if (pool->put(img) != 0) break;
             if (frames >= thread_num_ && pool->get(img) != 0) break;
+
+            long long infer_end = get_time_ms();
+            double infer_time = (double)(infer_end - infer_start);
 
             if (frames % 30 == 0 && frames > 0) {
                 long long now = get_time_ms();
                 current_fps = 30.0 / float(now - before_time) * 1000.0;
                 before_time = now;
+                emit statsUpdated(frames, current_fps, infer_time);
             }
 
             char fps_text[32];
@@ -114,7 +126,7 @@ protected:
             QThread::msleep(1);
         }
 
-        // 清空剩余结果
+        // drain remaining
         while (running_.load()) {
             cv::Mat img;
             if (pool->get(img) != 0) break;
@@ -126,8 +138,9 @@ protected:
         }
 
         long long end_time = get_time_ms();
-        double avg_fps = float(frames) / float(end_time - start_time) * 1000.0;
-        emit error(QString("Detection finished. Average FPS: %1").arg(avg_fps, 0, 'f', 2));
+        double avg_fps = (end_time > start_time) ? float(frames) / float(end_time - start_time) * 1000.0 : 0.0;
+        emit statsUpdated(frames, avg_fps, 0);
+        emit error(QString("Detection finished. Frames: %1, Avg FPS: %2").arg(frames).arg(avg_fps, 0, 'f', 2));
         emit finished();
     }
 
@@ -139,7 +152,7 @@ private:
 };
 
 // ============================================================
-// MainWindow: RK3588 主窗口
+// MainWindow: RK3588 主窗口 (16:9 自适应布局)
 // ============================================================
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -155,11 +168,14 @@ private slots:
     void onStartDetection();
     void onStopDetection();
     void onFrameReady(const QImage& image, double fps);
+    void onStatsUpdated(int frames, double fps, double inferTime);
     void onDetectFinished();
     void onDetectError(const QString& msg);
     void onConfThresholdChanged(int value);
     void onNmsThresholdChanged(int value);
     void onClearLog();
+    void onCameraSelected(int index);
+    void onRefreshCameras();
 
 private:
     void log(const QString& category, const QString& message);
@@ -167,8 +183,16 @@ private:
     void updateThresholdLabels();
     void enableControls(bool enabled);
     void setupUI();
+    void setupStyle();
+    void detectCameras();
+    QString formatSize(qint64 bytes);
 
-    // UI 组件
+    // --- 左侧面板 ---
+    // 检测显示
+    QLabel* display_label_;
+    QLabel* display_overlay_;       // 叠加 FPS/状态信息
+
+    // 控制区
     QLineEdit* model_edit_;
     QLineEdit* video_edit_;
     QPushButton* model_btn_;
@@ -176,18 +200,35 @@ private:
     QPushButton* load_btn_;
     QPushButton* start_btn_;
     QPushButton* stop_btn_;
-    QLabel* display_label_;
-    QLabel* model_status_label_;
-    QLabel* fps_label_;
-    QLabel* time_label_;
+    QSpinBox* thread_spin_;
     QSlider* conf_slider_;
     QSlider* nms_slider_;
     QLabel* conf_value_label_;
     QLabel* nms_value_label_;
-    QSpinBox* thread_spin_;
+
+    // --- 右侧面板 ---
+    // 状态信息
+    QLabel* model_status_label_;
+    QLabel* model_name_label_;
+    QLabel* fps_label_;
+    QLabel* resolution_label_;
+    QLabel* frames_label_;
+    QLabel* infer_time_label_;
+    QProgressBar* npu_usage_bar_;
+
+    // 摄像头列表
+    QListWidget* camera_list_;
+    QPushButton* refresh_cam_btn_;
+    QComboBox* camera_combo_;
+
+    // 日志
     QTextEdit* log_edit_;
     QPushButton* clear_log_btn_;
 
+    // 状态栏
+    QLabel* status_label_;
+
+    // 逻辑
     DetectThread* detect_thread_ = nullptr;
     float conf_threshold_ = 0.25f;
     float nms_threshold_ = 0.45f;
