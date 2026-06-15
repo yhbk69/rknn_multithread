@@ -37,6 +37,10 @@ private:
     std::unique_ptr<Ort::MemoryInfo> memoryInfo_;
     Ort::SessionOptions sessionOptions_;
 
+    // 存储完整的 std::string 以避免 GetInputNameAllocated 释放后的悬垂指针
+    std::vector<std::string> inputNameStrs_;
+    std::vector<std::string> outputNameStrs_;
+    // 缓存 c_str() 指针，供 Ort::Session::Run 使用
     std::vector<const char*> inputNames_;
     std::vector<const char*> outputNames_;
     std::vector<int64_t> inputShape_;

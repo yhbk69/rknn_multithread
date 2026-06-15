@@ -9,6 +9,7 @@
 #define RKYOLOV5S_H
 
 #include "rknn_api.h"
+#include "postprocess.h"
 
 #include "opencv2/core/core.hpp"
 
@@ -65,10 +66,11 @@ public:
     /*
      * 执行一次目标检测推理
      *
-     * @param ori_img  输入原始图像（OpenCV BGR 格式）
-     * @return         标注了检测框和类别信息的结果图像
+     * @param ori_img    输入原始图像（OpenCV BGR 格式）
+     * @param out_group  [可选] 输出原始检测结果组，传 NULL 时不输出
+     * @return           标注了检测框和类别信息的结果图像
      */
-    cv::Mat infer(cv::Mat &ori_img);
+    cv::Mat infer(cv::Mat &ori_img, detect_result_group_t *out_group = NULL);
 
     /* 析构函数：释放模型数据、张量属性及 RKNN 上下文等资源 */
     ~rkYolov5s();

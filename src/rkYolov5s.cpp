@@ -255,10 +255,11 @@ rknn_context *rkYolov5s::get_pctx()
 
 /**
  * 执行目标检测推理
- * @param orig_img 原始输入图像(BGR格式)
+ * @param orig_img   原始输入图像(BGR格式)
+ * @param out_group  [可选] 输出原始检测结果组，传 NULL 时不输出
  * @return 绘制了检测框的图像
  */
-cv::Mat rkYolov5s::infer(cv::Mat &orig_img)
+cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 {
     // 加锁保证线程安全，防止多个线程同时操作同一个模型实例
     std::lock_guard<std::mutex> lock(mtx);
@@ -356,6 +357,11 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img)
         rectangle(orig_img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(256, 0, 0, 256), 3);
         // 绘制类别名称和置信度
         putText(orig_img, text, cv::Point(x1, y1 + 12), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255));
+    }
+
+    // 如果调用方需要原始检测结果，拷贝输出
+    if (out_group) {
+        *out_group = detect_result_group;
     }
 
     // 释放输出缓冲区

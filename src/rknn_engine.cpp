@@ -8,6 +8,7 @@
 
 #include "engine/rknn_engine.hpp"
 #include <stdexcept>
+#include <cstring>
 
 RknnEngine::RknnEngine() {
 #ifdef __arm__
@@ -54,7 +55,8 @@ void RknnEngine::infer(const std::vector<float>& input,
                         float confThreshold, float iouThreshold) {
     detections.clear();
 #ifdef __arm__
-    // Reconstruct cv::Mat from float tensor (reverse Preprocessor::imageToTensor)
+    // 从 float 张量还原 cv::Mat（逆操作 Preprocessor::imageToTensor）
+    // 布局: CHW [3, 640, 640]，值域 [0, 1]
     cv::Mat rgb(640, 640, CV_32FC3);
     int idx = 0;
     for (int c = 0; c < 3; c++) {
@@ -68,12 +70,25 @@ void RknnEngine::infer(const std::vector<float>& input,
     cv::Mat bgr;
     cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR);
 
-    // Delegate to existing rkYolov5s inference pipeline
-    cv::Mat result = yolo_->infer(bgr);
+    // 委托给 rkYolov5s 推理管线，同时获取原始检测结果
+    detect_result_group_t resultGroup;
+    memset(&resultGroup, 0, sizeof(resultGroup));
+    cv::Mat result = yolo_->infer(bgr, &resultGroup);
 
-    // rkYolov5s::infer returns annotated image; detections are already drawn.
-    // For raw detections, use the separate postprocess pipeline (postprocess.cpp).
-    // This is a simplified wrapper for compatibility.
+    // 将 detect_result_t 转换为 Detection 结构体
+    detections.reserve(resultGroup.count);
+    for (int i = 0; i < resultGroup.count; ++i) {
+        const detect_result_t& r = resultGroup.results[i];
+        Detection det;
+        det.x        = static_cast<float>(r.box.left);
+        det.y        = static_cast<float>(r.box.top);
+        det.w        = static_cast<float>(r.box.right  - r.box.left);
+        det.h        = static_cast<float>(r.box.bottom - r.box.top);
+        det.conf     = r.prop;
+        det.class_id = -1;  // detect_result_t 只含名称，不含 ID
+        detections.push_back(det);
+    }
+
     (void)imgWidth; (void)imgHeight;
     (void)confThreshold; (void)iouThreshold;
 #else

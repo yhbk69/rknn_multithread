@@ -34,20 +34,31 @@ void OnnxEngine::load(const std::string& modelPath) {
         // 获取输入信息
         size_t numInputs = session_->GetInputCount();
         inputNames_.clear();
+        inputNameStrs_.clear();
         for (size_t i = 0; i < numInputs; i++) {
             auto name = session_->GetInputNameAllocated(i, allocator);
-            inputNames_.push_back(name.get());
+            inputNameStrs_.emplace_back(name.get());   // 拷贝到 string，安全持有
             auto typeInfo = session_->GetInputTypeInfo(i);
             auto tensorInfo = typeInfo.GetTensorTypeAndShapeInfo();
             inputShape_ = tensorInfo.GetShape();
+        }
+        // 建立 const char* 指针缓存（指向 string 内部稳定存储）
+        inputNames_.reserve(inputNameStrs_.size());
+        for (const auto& s : inputNameStrs_) {
+            inputNames_.push_back(s.c_str());
         }
 
         // 获取输出信息
         size_t numOutputs = session_->GetOutputCount();
         outputNames_.clear();
+        outputNameStrs_.clear();
         for (size_t i = 0; i < numOutputs; i++) {
             auto name = session_->GetOutputNameAllocated(i, allocator);
-            outputNames_.push_back(name.get());
+            outputNameStrs_.emplace_back(name.get());  // 拷贝到 string，安全持有
+        }
+        outputNames_.reserve(outputNameStrs_.size());
+        for (const auto& s : outputNameStrs_) {
+            outputNames_.push_back(s.c_str());
         }
 
         // 从输入形状推断尺寸
