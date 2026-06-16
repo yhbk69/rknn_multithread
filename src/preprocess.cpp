@@ -34,22 +34,20 @@
  */
 void letterbox(const cv::Mat &image, cv::Mat &padded_image, BOX_RECT &pads, const float scale, const cv::Size &target_size, const cv::Scalar &pad_color)
 {
-    // 按缩放比例调整图像大小
-    cv::Mat resized_image;
-    cv::resize(image, resized_image, cv::Size(), scale, scale);
+    int new_w = (int)(image.cols * scale);
+    int new_h = (int)(image.rows * scale);
+    int pad_width = target_size.width - new_w;
+    int pad_height = target_size.height - new_h;
 
-    // 计算需要填充的像素数
-    int pad_width = target_size.width - resized_image.cols;
-    int pad_height = target_size.height - resized_image.rows;
-
-    // 均匀分配到四个方向(左右、上下)
     pads.left = pad_width / 2;
     pads.right = pad_width - pads.left;
     pads.top = pad_height / 2;
     pads.bottom = pad_height - pads.top;
 
-    // 在图像四周添加固定颜色的填充
-    cv::copyMakeBorder(resized_image, padded_image, pads.top, pads.bottom, pads.left, pads.right, cv::BORDER_CONSTANT, pad_color);
+    float tx = (float)pads.left;
+    float ty = (float)pads.top;
+    cv::Mat M = (cv::Mat_<float>(2, 3) << scale, 0, tx, 0, scale, ty);
+    cv::warpAffine(image, padded_image, M, target_size, cv::INTER_LINEAR, cv::BORDER_CONSTANT, pad_color);
 }
 
 /**

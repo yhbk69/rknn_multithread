@@ -34,7 +34,8 @@ private:
     rknn_input inputs[1];               // 模型输入数据（单输入）
 
     int channel, width, height;   // 模型输入张量的通道数、宽度和高度
-    int img_width, img_height;    // 当前推理图像的实际宽度和高度
+    std::vector<float> out_scales_;   // 预计算输出量化缩放因子
+    std::vector<int32_t> out_zps_;   // 预计算输出量化零点
 
     float nms_threshold, box_conf_threshold; // NMS 阈值和边界框置信度阈值
 

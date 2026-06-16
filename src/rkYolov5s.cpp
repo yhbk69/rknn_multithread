@@ -247,6 +247,15 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
         dump_tensor_attr(&(output_attrs[i]));
     }
 
+    // 预计算输出量化参数，避免每帧重复构造
+    out_scales_.resize(io_num.n_output);
+    out_zps_.resize(io_num.n_output);
+    for (int i = 0; i < io_num.n_output; ++i)
+    {
+        out_scales_[i] = output_attrs[i].scale;
+        out_zps_[i] = output_attrs[i].zp;
+    }
+
     // 解析模型输入张量的格式和尺寸
     // 支持NCHW和NHWC两种格式
     if (input_attrs[0].fmt == RKNN_TENSOR_NCHW)
@@ -370,16 +379,9 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     }
 
     detect_result_group_t detect_result_group;
-    std::vector<float> out_scales;
-    std::vector<int32_t> out_zps;
-    for (int i = 0; i < io_num.n_output; ++i)
-    {
-        out_scales.push_back(output_attrs[i].scale);
-        out_zps.push_back(output_attrs[i].zp);
-    }
     post_ctx_.process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf,
                  height, width, conf, nms, pads, scale_w, scale_h,
-                 out_zps, out_scales, &detect_result_group);
+                 out_zps_, out_scales_, &detect_result_group);
 
     char text[256];
     for (int i = 0; i < detect_result_group.count; i++)
