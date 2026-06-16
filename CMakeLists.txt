@@ -54,6 +54,8 @@ set(QT_SOURCES
     include/websocket.hpp
     src/rk/main_rk.cpp
     src/rk/mainwindow.cpp
+    src/rk/mainwindow_helpers.cpp
+    src/rk/mainwindow_slots.cpp
     src/rk/mainwindow.hpp
 )
 

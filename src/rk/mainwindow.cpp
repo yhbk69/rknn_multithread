@@ -1,22 +1,14 @@
 /*
- * mainwindow.cpp - RK3588 Qt GUI 主窗口实现
- * 四路视频 2x2 网格布局，支持单路放大/缩小
+ * mainwindow.cpp - RK3588 Qt GUI 主窗口
+ * 构造/析构 + UI 布局 + 样式表
  */
 
 #include "rk/mainwindow.hpp"
 #include <QDateTime>
-#include <QMessageBox>
 #include <QGroupBox>
 #include <QFrame>
-#include <QDir>
 #include <QFileInfo>
-#include <QStyle>
-#include <QJsonDocument>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QFile>
-#include <QTextStream>
-#include <QMouseEvent>
+#include <QNetworkInterface>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), expanded_ch_(-1)
@@ -87,66 +79,6 @@ MainWindow::~MainWindow() {
 }
 
 // ============================================================
-// 缩放控制
-// ============================================================
-
-void MainWindow::onZoomIn(int ch) {
-    if (ch < 0 || ch >= MAX_CHANNELS) return;
-    expanded_ch_ = ch;
-    updateZoomState();
-    log("system", QString("通道 %1 放大显示").arg(ch + 1));
-}
-
-void MainWindow::onZoomOut() {
-    expanded_ch_ = -1;
-    updateZoomState();
-    log("system", "恢复四分屏显示");
-}
-
-void MainWindow::updateZoomState() {
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (!video_cells_[i].container) continue;
-        if (expanded_ch_ == -1) {
-            // 网格模式：所有通道可见
-            video_cells_[i].container->show();
-            video_cells_[i].zoom_in_btn->show();
-            video_cells_[i].zoom_out_btn->hide();
-            grid_layout_->addWidget(video_cells_[i].container, i / 2, i % 2);
-        } else if (i == expanded_ch_) {
-            // 放大模式：选中的通道占满整个网格
-            video_cells_[i].container->show();
-            video_cells_[i].zoom_in_btn->hide();
-            video_cells_[i].zoom_out_btn->show();
-            grid_layout_->addWidget(video_cells_[i].container, 0, 0, 2, 2);
-        } else {
-            // 放大模式：其他通道隐藏
-            video_cells_[i].container->hide();
-        }
-    }
-    grid_layout_->invalidate();
-}
-
-// ============================================================
-// ROI 检测区域（简化版：对所有通道生效）
-// ============================================================
-
-void MainWindow::onScreenshot() {
-    // 截取当前活跃通道的帧
-    int ch = (expanded_ch_ >= 0) ? expanded_ch_ : 0;
-    if (last_frames_[ch].isNull()) {
-        log("system", "无可用帧进行截图。");
-        return;
-    }
-    QString fileName = QFileDialog::getSaveFileName(this, "保存截图",
-        QString("screenshot_ch%1_%2.png").arg(ch + 1).arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss")),
-        "PNG (*.png);;JPEG (*.jpg)");
-    if (!fileName.isEmpty()) {
-        last_frames_[ch].save(fileName);
-        log("system", QString("截图已保存: %1").arg(fileName));
-    }
-}
-
-// ============================================================
 // UI 布局
 // ============================================================
 void MainWindow::setupUI() {
@@ -155,21 +87,16 @@ void MainWindow::setupUI() {
 
     AppConfig cfg = load_config();
 
-    // =============================================
-    // 主分割器：左右分栏 (3:1)
-    // =============================================
     QSplitter* main_splitter = new QSplitter(Qt::Horizontal, this);
     main_splitter->setHandleWidth(4);
 
-    // =============================================
-    // 左侧面板：2x2 视频网格 + 控制区
-    // =============================================
+    // 左侧面板
     QWidget* left_panel = new QWidget();
     QVBoxLayout* left_layout = new QVBoxLayout(left_panel);
     left_layout->setContentsMargins(0, 0, 0, 0);
     left_layout->setSpacing(4);
 
-    // -- 2x2 视频网格 --
+    // 2x2 视频网格
     QWidget* grid_widget = new QWidget(left_panel);
     grid_layout_ = new QGridLayout(grid_widget);
     grid_layout_->setContentsMargins(2, 2, 2, 2);
@@ -185,7 +112,6 @@ void MainWindow::setupUI() {
         cell_layout->setContentsMargins(0, 0, 0, 0);
         cell_layout->setSpacing(0);
 
-        // 顶部标签栏
         QWidget* top_bar = new QWidget(cell.container);
         QHBoxLayout* top_layout = new QHBoxLayout(top_bar);
         top_layout->setContentsMargins(6, 2, 6, 2);
@@ -214,7 +140,6 @@ void MainWindow::setupUI() {
         top_layout->addWidget(cell.zoom_in_btn);
         top_layout->addWidget(cell.zoom_out_btn);
 
-        // GraphicsView
         cell.view = new QGraphicsView(cell.container);
         cell.view->setRenderHint(QPainter::Antialiasing);
         cell.view->setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
@@ -237,7 +162,7 @@ void MainWindow::setupUI() {
 
     left_layout->addWidget(grid_widget, 3);
 
-    // -- 控制区 (底部) --
+    // 控制区
     QFrame* control_frame = new QFrame(left_panel);
     control_frame->setFrameStyle(QFrame::StyledPanel);
     QVBoxLayout* ctrl_layout = new QVBoxLayout(control_frame);
@@ -277,11 +202,16 @@ void MainWindow::setupUI() {
         video_btns_[i] = new QPushButton("浏览", left_panel);
         video_btns_[i]->setFixedWidth(70);
         video_btns_[i]->setFixedHeight(32);
-        video_del_btns_[i] = new QPushButton("×", left_panel);
+        video_btns_[i]->setStyleSheet(
+            "QPushButton { padding: 4px 8px; min-height: 0px; }"
+            "QPushButton:hover { background-color: #333333; border: 1px solid #4a4a4a; color: #ffffff; }"
+            "QPushButton:pressed { background-color: #1a1a1a; }");
+        video_del_btns_[i] = new QPushButton("X", left_panel);
         video_del_btns_[i]->setFixedSize(32, 32);
         video_del_btns_[i]->setToolTip("清空此路视频源");
         video_del_btns_[i]->setStyleSheet(
-            "QPushButton { background-color: #922b21; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; }"
+            "QPushButton { background-color: #922b21; color: #ffffff; border: none; border-radius: 4px; "
+            "padding: 0px; min-height: 0px; font-size: 16px; font-weight: bold; }"
             "QPushButton:hover { background-color: #c0392b; }");
 
         QLabel* road_label = new QLabel(QString("路%1:").arg(i + 1), left_panel);
@@ -369,15 +299,12 @@ void MainWindow::setupUI() {
 
     main_splitter->addWidget(left_panel);
 
-    // =============================================
-    // 右侧面板：状态 + 日志
-    // =============================================
+    // 右侧面板
     QWidget* right_panel = new QWidget();
     QVBoxLayout* right_layout = new QVBoxLayout(right_panel);
     right_layout->setContentsMargins(0, 0, 0, 0);
     right_layout->setSpacing(6);
 
-    // 状态信息组
     QGroupBox* status_group = new QGroupBox("通道状态", right_panel);
     QGridLayout* status_grid = new QGridLayout(status_group);
     status_grid->setSpacing(4);
@@ -405,7 +332,6 @@ void MainWindow::setupUI() {
         status_grid->addWidget(frames_labels_[i], i + 1, 2);
     }
 
-    // NPU 使用率
     QLabel* npu_label = new QLabel("NPU 使用率:");
     npu_label->setObjectName("statusHeader");
     npu_usage_bar_ = new QProgressBar(right_panel);
@@ -430,7 +356,6 @@ void MainWindow::setupUI() {
 
     right_layout->addWidget(status_group, 0);
 
-    // WebSocket 状态
     QGroupBox* ws_group = new QGroupBox("WebSocket", right_panel);
     QVBoxLayout* ws_layout = new QVBoxLayout(ws_group);
     ws_layout->setContentsMargins(10, 16, 10, 10);
@@ -440,7 +365,6 @@ void MainWindow::setupUI() {
     ws_layout->addWidget(ws_clients_label_);
     right_layout->addWidget(ws_group, 0);
 
-    // 日志
     QGroupBox* log_group = new QGroupBox("运行日志", right_panel);
     QVBoxLayout* log_layout = new QVBoxLayout(log_group);
     log_layout->setContentsMargins(10, 16, 10, 10);
@@ -468,7 +392,6 @@ void MainWindow::setupUI() {
     main_layout->setContentsMargins(4, 4, 4, 4);
     main_layout->addWidget(main_splitter);
 
-    // 状态栏
     status_label_ = new QLabel("就绪", this);
     statusBar()->addWidget(status_label_, 1);
     statusBar()->addPermanentWidget(new QLabel("RK3588 YOLO 四路检测", this));
@@ -669,397 +592,4 @@ void MainWindow::setupStyle() {
             height: 0px;
         }
     )");
-}
-
-// ============================================================
-// 辅助函数
-// ============================================================
-
-QString MainWindow::currentTimestamp() {
-    return QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
-}
-
-void MainWindow::log(const QString& category, const QString& message) {
-    log_edit_->append(QString("[%1][%2] %3").arg(currentTimestamp(), category, message));
-}
-
-void MainWindow::updateThresholdLabels() {
-    conf_value_label_->setText(QString::number(conf_threshold_, 'f', 2));
-    nms_value_label_->setText(QString::number(nms_threshold_, 'f', 2));
-}
-
-void MainWindow::enableControls(bool running) {
-    start_btn_->setEnabled(!running);
-    stop_btn_->setEnabled(running);
-    pause_btn_->setEnabled(running);
-    step_btn_->setEnabled(running);
-    screenshot_btn_->setEnabled(running);
-    export_btn_->setEnabled(!running);
-    model_btn_->setEnabled(!running);
-    load_btn_->setEnabled(!running);
-    for (int i = 0; i < MAX_CHANNELS; i++)
-        video_btns_[i]->setEnabled(!running);
-    thread_spin_->setEnabled(!running);
-}
-
-QString MainWindow::formatSize(qint64 bytes) {
-    if (bytes < 1024) return QString("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024) return QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
-    return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
-}
-
-void MainWindow::saveSettings() {
-    QSettings s("RK3588", "YOLO_Detector");
-    s.setValue("model_path", model_edit_->text());
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        s.setValue(QString("video_path_%1").arg(i), video_edits_[i]->text());
-        s.setValue(QString("video_alias_%1").arg(i), video_alias_edits_[i]->text());
-    }
-    s.setValue("thread_num", thread_spin_->value());
-    s.setValue("conf_threshold", conf_threshold_);
-    s.setValue("nms_threshold", nms_threshold_);
-    s.setValue("geometry", saveGeometry());
-}
-
-void MainWindow::restoreSettings() {
-    QSettings s("RK3588", "YOLO_Detector");
-    if (s.contains("model_path"))
-        model_edit_->setText(s.value("model_path").toString());
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        QString key = QString("video_path_%1").arg(i);
-        if (s.contains(key))
-            video_edits_[i]->setText(s.value(key).toString());
-        QString alias_key = QString("video_alias_%1").arg(i);
-        if (s.contains(alias_key))
-            video_alias_edits_[i]->setText(s.value(alias_key).toString());
-    }
-    if (s.contains("thread_num"))
-        thread_spin_->setValue(s.value("thread_num", 3).toInt());
-    if (s.contains("conf_threshold")) {
-        conf_threshold_ = s.value("conf_threshold", 0.25f).toFloat();
-        conf_slider_->setValue((int)(conf_threshold_ * 100));
-    }
-    if (s.contains("nms_threshold")) {
-        nms_threshold_ = s.value("nms_threshold", 0.45f).toFloat();
-        nms_slider_->setValue((int)(nms_threshold_ * 100));
-    }
-    if (s.contains("geometry"))
-        restoreGeometry(s.value("geometry").toByteArray());
-}
-
-// ============================================================
-// 槽函数
-// ============================================================
-void MainWindow::onBrowseModel() {
-    QString p = QFileDialog::getOpenFileName(this, "选择 RKNN 模型", "", "RKNN 模型 (*.rknn);;所有文件 (*.*)");
-    if (!p.isEmpty()) model_edit_->setText(p);
-}
-
-void MainWindow::onLoadModel() {
-    model_path_ = model_edit_->text().toStdString();
-    if (model_path_.empty()) {
-        QMessageBox::warning(this, "错误", "请选择模型文件。");
-        return;
-    }
-
-    FILE* f = fopen(model_path_.c_str(), "rb");
-    if (!f) {
-        model_status_label_->setText("加载失败");
-        model_status_label_->setStyleSheet("color: #e74c3c; font-weight: bold;");
-        model_status_left_label_->setText("加载失败");
-        model_status_left_label_->setStyleSheet("color: #e74c3c; font-weight: bold;");
-        QMessageBox::warning(this, "错误", "模型文件未找到：" + QString::fromStdString(model_path_));
-        return;
-    }
-    fseek(f, 0, SEEK_END);
-    qint64 size = ftell(f);
-    fclose(f);
-
-    QFileInfo fi(QString::fromStdString(model_path_));
-    model_status_label_->setText("已选择");
-    model_status_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
-    model_status_left_label_->setText("已选择");
-    model_status_left_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
-    model_name_label_->setText(fi.fileName());
-    start_btn_->setEnabled(true);
-    log("model", QString("已选择：%1 (%2)").arg(fi.fileName(), formatSize(size)));
-}
-
-void MainWindow::onBrowseVideo(int ch) {
-    if (ch < 0 || ch >= MAX_CHANNELS) return;
-    QString p = QFileDialog::getOpenFileName(this, QString("选择通道%1视频").arg(ch + 1),
-        "", "视频文件 (*.mp4 *.avi *.mkv *.mov);;所有文件 (*.*)");
-    if (!p.isEmpty()) video_edits_[ch]->setText(p);
-}
-
-void MainWindow::onStartDetection() {
-    if (model_path_.empty()) {
-        QMessageBox::warning(this, "错误", "请先加载模型。");
-        return;
-    }
-
-    // 收集有效的视频源
-    int active_count = 0;
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (!video_edits_[i]->text().trimmed().isEmpty())
-            active_count++;
-    }
-
-    if (active_count == 0) {
-        QMessageBox::warning(this, "错误", "请至少输入一个视频源。");
-        return;
-    }
-
-    int thread_num = thread_spin_->value();
-    export_records_.clear();
-
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        QString video_text = video_edits_[i]->text().trimmed();
-        if (video_text.isEmpty()) continue;
-
-        std::string video_path = video_text.toStdString();
-        detect_threads_[i] = new DetectThread(i, model_path_, video_path, thread_num, conf_threshold_, nms_threshold_);
-        detect_threads_[i]->setWebSocket(ws_server_.get());
-
-        int ch = i;
-        connect(detect_threads_[i], &DetectThread::frameReady, this,
-            [this, ch](const QImage& img, double fps) { onFrameReady(ch, img, fps); });
-        connect(detect_threads_[i], &DetectThread::statsUpdated, this,
-            [this, ch](int frames, double fps, double inferTime) { onStatsUpdated(ch, frames, fps, inferTime); });
-        connect(detect_threads_[i], &DetectThread::finished, this,
-            [this, ch]() { onDetectFinished(ch); });
-        connect(detect_threads_[i], &DetectThread::error, this,
-            [this, ch](const QString& msg) { onDetectError(ch, msg); });
-        connect(detect_threads_[i], &DetectThread::detectionResult, this,
-            [this, ch](int frameId, const QString &cls, float conf, int l, int t, int r, int b) {
-                export_records_.push_back({ch, frameId, cls.toStdString(), conf, l, t, r, b});
-            });
-
-        detect_threads_[i]->start();
-        log("system", QString("通道%1 检测开始。来源：%2").arg(i + 1).arg(video_edits_[i]->text()));
-    }
-
-    enableControls(true);
-    model_status_label_->setText("运行中");
-    model_status_label_->setStyleSheet("color: #ffb74d; font-weight: bold;");
-    model_status_left_label_->setText("运行中");
-    model_status_left_label_->setStyleSheet("color: #ffb74d; font-weight: bold;");
-    status_label_->setText(QString("检测中... %1 路").arg(active_count));
-}
-
-void MainWindow::onStopDetection() {
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (detect_threads_[i]) {
-            detect_threads_[i]->stop();
-        }
-    }
-    log("system", "正在停止所有检测...");
-    status_label_->setText("停止中...");
-}
-
-void MainWindow::onFrameReady(int ch, const QImage& image, double fps) {
-    if (ch < 0 || ch >= MAX_CHANNELS) return;
-    last_frames_[ch] = image;
-
-    VideoCell& cell = video_cells_[ch];
-    QPixmap pix = QPixmap::fromImage(image);
-    cell.pixmap_item->setPixmap(pix);
-    cell.scene->setSceneRect(pix.rect());
-    cell.view->fitInView(cell.pixmap_item, Qt::KeepAspectRatio);
-
-    cell.overlay->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
-    cell.last_fps = fps;
-}
-
-void MainWindow::onStatsUpdated(int ch, int frames, double fps, double inferTime) {
-    if (ch < 0 || ch >= MAX_CHANNELS) return;
-    fps_labels_[ch]->setText(QString::number(fps, 'f', 1));
-    frames_labels_[ch]->setText(QString::number(frames));
-
-    int usage = 0;
-    FILE *fp = fopen("/sys/class/devfreq/fdab0000.npu/load", "r");
-    if (fp) {
-        char buf[64] = {0};
-        if (fgets(buf, sizeof(buf), fp))
-            usage = qBound(0, atoi(buf), 100);
-        fclose(fp);
-    }
-    npu_usage_bar_->setValue(usage);
-}
-
-void MainWindow::onDetectFinished(int ch) {
-    if (ch < 0 || ch >= MAX_CHANNELS) return;
-    if (detect_threads_[ch]) {
-        detect_threads_[ch]->wait();
-        detect_threads_[ch]->deleteLater();
-        detect_threads_[ch] = nullptr;
-    }
-
-    // 检查是否所有通道都完成了
-    bool all_done = true;
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (detect_threads_[i]) { all_done = false; break; }
-    }
-
-    if (all_done) {
-        enableControls(false);
-        model_status_label_->setText("已完成");
-        model_status_label_->setStyleSheet("color: #8a9bb0; font-weight: bold;");
-        model_status_left_label_->setText("已选择");
-        model_status_left_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
-        status_label_->setText("所有通道检测完成。");
-        log("system", "所有通道检测完成。");
-    } else {
-        log("system", QString("通道%1 检测完成。").arg(ch + 1));
-    }
-}
-
-void MainWindow::onDetectError(int ch, const QString& msg) {
-    log("info", msg);
-}
-
-void MainWindow::onConfThresholdChanged(int value) {
-    conf_threshold_ = value / 100.0f;
-    updateThresholdLabels();
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (detect_threads_[i]) {
-            detect_threads_[i]->set_thread_num(thread_spin_->value());
-        }
-    }
-}
-
-void MainWindow::onNmsThresholdChanged(int value) {
-    nms_threshold_ = value / 100.0f;
-    updateThresholdLabels();
-}
-
-void MainWindow::onClearLog() {
-    log_edit_->clear();
-}
-
-void MainWindow::onPauseToggle() {
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (!detect_threads_[i]) continue;
-        if (detect_threads_[i]->isPaused()) {
-            detect_threads_[i]->resume();
-            pause_btn_->setText("暂停");
-        } else {
-            detect_threads_[i]->pause();
-            pause_btn_->setText("继续");
-        }
-        break;
-    }
-}
-
-void MainWindow::onStepFrame() {
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (detect_threads_[i]) {
-            detect_threads_[i]->stepFrame();
-        }
-    }
-}
-
-void MainWindow::onExportResults() {
-    if (export_records_.empty()) {
-        QMessageBox::information(this, "导出", "没有检测结果可导出。");
-        return;
-    }
-
-    QString fileName = QFileDialog::getSaveFileName(this, "导出检测结果",
-        QString("detection_%1.json").arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss")),
-        "JSON (*.json);;CSV (*.csv)");
-    if (fileName.isEmpty()) return;
-
-    if (fileName.endsWith(".json")) {
-        QJsonArray arr;
-        for (const auto& rec : export_records_) {
-            QJsonObject obj;
-            obj["channel"] = rec.channel + 1;
-            obj["frame_id"] = rec.frame_id;
-            obj["class"] = QString::fromStdString(rec.class_name);
-            obj["confidence"] = rec.confidence;
-            obj["left"] = rec.left;
-            obj["top"] = rec.top;
-            obj["right"] = rec.right;
-            obj["bottom"] = rec.bottom;
-            arr.append(obj);
-        }
-        QFile file(fileName);
-        if (file.open(QIODevice::WriteOnly)) {
-            file.write(QJsonDocument(arr).toJson());
-            file.close();
-            log("system", QString("导出 %1 条检测结果到 %2").arg(export_records_.size()).arg(fileName));
-        }
-    } else {
-        QFile file(fileName);
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream ts(&file);
-            ts << "channel,frame_id,class,confidence,left,top,right,bottom\n";
-            for (const auto& rec : export_records_) {
-                ts << QString("%1,%2,%3,%4,%5,%6,%7,%8\n")
-                      .arg(rec.channel + 1).arg(rec.frame_id)
-                      .arg(QString::fromStdString(rec.class_name))
-                      .arg(rec.confidence, 0, 'f', 4)
-                      .arg(rec.left).arg(rec.top).arg(rec.right).arg(rec.bottom);
-            }
-            file.close();
-            log("system", QString("导出 %1 条结果到 %2").arg(export_records_.size()).arg(fileName));
-        }
-    }
-}
-
-// ============================================================
-// WebSocket 回调
-// ============================================================
-
-void MainWindow::onWebSocketStarted(quint16 port) {
-    // 获取真实 IP 地址，避免显示 0.0.0.0
-    QString real_ip = "0.0.0.0";
-    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
-        if (iface.flags().testFlag(QNetworkInterface::IsUp) &&
-            iface.flags().testFlag(QNetworkInterface::IsRunning) &&
-            !iface.flags().testFlag(QNetworkInterface::IsLoopBack)) {
-            for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
-                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
-                    real_ip = entry.ip().toString();
-                    break;
-                }
-            }
-            if (real_ip != "0.0.0.0") break;
-        }
-    }
-    ws_status_label_->setText(QString("ws://%1:%2").arg(real_ip).arg(port));
-}
-
-void MainWindow::onWebSocketClientConnected(QWebSocket *client) {
-    Q_UNUSED(client);
-    ws_clients_label_->setText(QString("客户端: %1").arg(ws_server_->clientCount()));
-}
-
-void MainWindow::onWebSocketClientDisconnected(QWebSocket *client) {
-    Q_UNUSED(client);
-    ws_clients_label_->setText(QString("客户端: %1").arg(ws_server_->clientCount()));
-}
-
-void MainWindow::onWebSocketAlarm(const QString &alarmId, const QString &alarmType,
-                                   int frameId, long long timestampMs) {
-    Q_UNUSED(alarmId); Q_UNUSED(frameId); Q_UNUSED(timestampMs);
-    log("alarm", QString("报警: %1").arg(alarmType));
-}
-
-// ============================================================
-// 配置热更新
-// ============================================================
-
-void MainWindow::onConfigFileChanged(const QString &path) {
-    Q_UNUSED(path);
-    log("system", "检测到 config.json 变化，重新加载配置。");
-    AppConfig cfg = load_config();
-    conf_threshold_ = cfg.box_threshold;
-    nms_threshold_ = cfg.nms_threshold;
-    conf_slider_->setValue((int)(conf_threshold_ * 100));
-    nms_slider_->setValue((int)(nms_threshold_ * 100));
-    updateThresholdLabels();
-
-    config_watcher_->addPath("config.json");
 }
