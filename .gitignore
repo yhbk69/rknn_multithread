@@ -47,3 +47,4 @@ CODE_REVIEW_REPORT.md
 plan.md
 
 .mimocode/
+include/nlohmann/

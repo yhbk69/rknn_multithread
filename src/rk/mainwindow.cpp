@@ -12,6 +12,12 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QStyle>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QFile>
+#include <QTextStream>
+#include <QMouseEvent>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), detect_thread_(nullptr)
@@ -82,6 +88,118 @@ MainWindow::~MainWindow() {
         detect_thread_->wait();
         delete detect_thread_;
         detect_thread_ = nullptr;
+    }
+}
+
+// ============================================================
+// ROI 检测区域
+// ============================================================
+
+void MainWindow::onRoiToggle() {
+    roi_enabled_ = !roi_enabled_;
+    if (roi_enabled_) {
+        roi_btn_->setText("取消框选");
+        roi_btn_->setObjectName("stopBtn");
+        roi_btn_->setStyleSheet("background-color: #922b21; border-color: #c0392b; color: white; font-weight: bold;");
+        roi_status_label_->setText("请在画面上拖拽框选");
+        roi_status_label_->setStyleSheet("color: #ffb74d; font-size: 12px;");
+        log("system", "ROI 框选模式已开启，在画面上拖拽鼠标选择区域。");
+    } else {
+        roi_btn_->setText("框选区域");
+        roi_btn_->setObjectName("");
+        roi_btn_->setStyleSheet("");
+        if (!roi_rect_.isNull()) {
+            roi_status_label_->setText(QString("区域: %1x%2").arg(roi_rect_.width()).arg(roi_rect_.height()));
+            roi_status_label_->setStyleSheet("color: #2ecc71; font-size: 12px;");
+        } else {
+            roi_status_label_->setText("全画面");
+            roi_status_label_->setStyleSheet("color: #8a9bb0; font-size: 12px;");
+        }
+        log("system", "ROI 框选模式已关闭。");
+    }
+}
+
+void MainWindow::onRoiClear() {
+    roi_rect_ = QRect();
+    roi_enabled_ = false;
+    roi_btn_->setText("框选区域");
+    roi_btn_->setObjectName("");
+    roi_btn_->setStyleSheet("");
+    roi_clear_btn_->setEnabled(false);
+    roi_status_label_->setText("全画面");
+    roi_status_label_->setStyleSheet("color: #8a9bb0; font-size: 12px;");
+    log("system", "ROI 区域已清除，恢复全画面检测。");
+}
+
+void MainWindow::mousePressEvent(QMouseEvent *event) {
+    if (!roi_enabled_) {
+        QMainWindow::mousePressEvent(event);
+        return;
+    }
+    // 只在显示区域响应
+    if (event->button() == Qt::LeftButton && display_view_->geometry().contains(event->pos())) {
+        roi_start_ = event->pos();
+        roi_selecting_ = true;
+    }
+}
+
+void MainWindow::mouseMoveEvent(QMouseEvent *event) {
+    if (!roi_selecting_) {
+        QMainWindow::mouseMoveEvent(event);
+        return;
+    }
+    // 画面上临时显示选择框（通过更新 overlay）
+    QRect current = QRect(roi_start_, event->pos()).normalized();
+    roi_status_label_->setText(QString("选择中: %1x%2").arg(current.width()).arg(current.height()));
+}
+
+void MainWindow::mouseReleaseEvent(QMouseEvent *event) {
+    if (!roi_selecting_) {
+        QMainWindow::mouseReleaseEvent(event);
+        return;
+    }
+    roi_selecting_ = false;
+
+    if (event->button() == Qt::LeftButton) {
+        QRect selection = QRect(roi_start_, event->pos()).normalized();
+
+        // 将屏幕坐标转换为图像坐标
+        QRect viewGeom = display_view_->geometry();
+        QPixmap pix = pixmap_item_->pixmap();
+        if (pix.isNull()) {
+            QMainWindow::mouseReleaseEvent(event);
+            return;
+        }
+
+        // 计算图像在视图中的显示区域（fitInView 后的实际位置）
+        QRectF sceneRect = pixmap_item_->boundingRect();
+        QRectF mappedRect = display_view_->mapToScene(viewGeom).boundingRect();
+
+        double scaleX = (double)pix.width() / sceneRect.width();
+        double scaleY = (double)pix.height() / sceneRect.height();
+
+        int imgX1 = (int)((selection.left() - mappedRect.left()) * scaleX);
+        int imgY1 = (int)((selection.top() - mappedRect.top()) * scaleY);
+        int imgX2 = (int)((selection.right() - mappedRect.left()) * scaleX);
+        int imgY2 = (int)((selection.bottom() - mappedRect.top()) * scaleY);
+
+        // 限制在图像范围内
+        imgX1 = qBound(0, imgX1, pix.width() - 1);
+        imgY1 = qBound(0, imgY1, pix.height() - 1);
+        imgX2 = qBound(0, imgX2, pix.width() - 1);
+        imgY2 = qBound(0, imgY2, pix.height() - 1);
+
+        if (imgX2 > imgX1 && imgY2 > imgY1) {
+            roi_rect_ = QRect(imgX1, imgY1, imgX2 - imgX1, imgY2 - imgY1);
+            roi_clear_btn_->setEnabled(true);
+            roi_status_label_->setText(QString("区域: (%1,%2) %3x%4")
+                .arg(roi_rect_.x()).arg(roi_rect_.y())
+                .arg(roi_rect_.width()).arg(roi_rect_.height()));
+            roi_status_label_->setStyleSheet("color: #2ecc71; font-size: 12px;");
+            log("system", QString("ROI 区域已设置: (%1,%2) %3x%4")
+                .arg(roi_rect_.x()).arg(roi_rect_.y())
+                .arg(roi_rect_.width()).arg(roi_rect_.height()));
+        }
     }
 }
 
@@ -472,6 +590,8 @@ void MainWindow::setupUI() {
     record_btn_ = new QPushButton("录制", left_panel);
     record_btn_->setEnabled(false);
     record_btn_->setObjectName("stopBtn");
+    export_btn_ = new QPushButton("导出结果", left_panel);
+    export_btn_->setEnabled(false);
 
     thread_spin_ = new QSpinBox(left_panel);
     thread_spin_->setRange(1, 8);
@@ -483,6 +603,7 @@ void MainWindow::setupUI() {
     btn_row->addWidget(step_btn_);
     btn_row->addWidget(screenshot_btn_);
     btn_row->addWidget(record_btn_);
+    btn_row->addWidget(export_btn_);
     btn_row->addStretch();
     btn_row->addWidget(new QLabel("线程数:", left_panel));
     btn_row->addWidget(thread_spin_);
@@ -511,6 +632,21 @@ void MainWindow::setupUI() {
     thr_row->addWidget(nms_slider_, 1);
     thr_row->addWidget(nms_value_label_);
     ctrl_layout->addLayout(thr_row);
+
+    // ROI 行
+    QHBoxLayout* roi_row = new QHBoxLayout();
+    roi_row->setSpacing(6);
+    roi_btn_ = new QPushButton("框选区域", left_panel);
+    roi_btn_->setToolTip("在画面上拖拽框选检测区域");
+    roi_clear_btn_ = new QPushButton("清除区域", left_panel);
+    roi_clear_btn_->setEnabled(false);
+    roi_status_label_ = new QLabel("全画面", left_panel);
+    roi_status_label_->setStyleSheet("color: #8a9bb0; font-size: 12px;");
+    roi_row->addWidget(roi_btn_);
+    roi_row->addWidget(roi_clear_btn_);
+    roi_row->addWidget(roi_status_label_);
+    roi_row->addStretch();
+    ctrl_layout->addLayout(roi_row);
 
     left_layout->addWidget(control_frame, 0);  // 控制区不伸缩
 
@@ -661,6 +797,9 @@ void MainWindow::setupUI() {
     connect(step_btn_, &QPushButton::clicked, this, &MainWindow::onStepFrame);
     connect(screenshot_btn_, &QPushButton::clicked, this, &MainWindow::onScreenshot);
     connect(record_btn_, &QPushButton::clicked, this, &MainWindow::onRecordToggle);
+    connect(export_btn_, &QPushButton::clicked, this, &MainWindow::onExportResults);
+    connect(roi_btn_, &QPushButton::clicked, this, &MainWindow::onRoiToggle);
+    connect(roi_clear_btn_, &QPushButton::clicked, this, &MainWindow::onRoiClear);
 
     // =============================================
     // 快捷键
@@ -750,6 +889,7 @@ void MainWindow::enableControls(bool enabled) {
     step_btn_->setEnabled(enabled);
     screenshot_btn_->setEnabled(enabled);
     record_btn_->setEnabled(enabled);
+    export_btn_->setEnabled(enabled);
     model_edit_->setEnabled(!enabled);
     video_edit_->setEnabled(!enabled);
     model_btn_->setEnabled(!enabled);
@@ -873,12 +1013,19 @@ void MainWindow::onStartDetection() {
 
     int thread_num = thread_spin_->value();
 
+    export_records_.clear();
     detect_thread_ = new DetectThread(model_path_, video_path_, thread_num, conf_threshold_, nms_threshold_);
     detect_thread_->setWebSocket(ws_server_.get());
+    if (!roi_rect_.isNull()) {
+        detect_thread_->setRoi(roi_rect_);
+    }
     connect(detect_thread_, &DetectThread::frameReady, this, &MainWindow::onFrameReady);
     connect(detect_thread_, &DetectThread::statsUpdated, this, &MainWindow::onStatsUpdated);
     connect(detect_thread_, &DetectThread::finished, this, &MainWindow::onDetectFinished);
     connect(detect_thread_, &DetectThread::error, this, &MainWindow::onDetectError);
+    connect(detect_thread_, &DetectThread::detectionResult, this, [this](int frameId, const QString &cls, float conf, int l, int t, int r, int b) {
+        export_records_.push_back({frameId, cls.toStdString(), conf, l, t, r, b});
+    });
 
     enableControls(true);
     model_status_label_->setText("运行中");
@@ -1102,4 +1249,107 @@ void MainWindow::onWebSocketAlarm(const QString &alarmId, const QString &alarmTy
                                    int frameId, long long timestampMs) {
     log("alarm", QString("[%1] %2 (frame %3)")
         .arg(alarmId, alarmType).arg(frameId));
+}
+
+// ============================================================
+// 配置热更新
+// ============================================================
+
+void MainWindow::onConfigFileChanged(const QString &path) {
+    // 重新监听（某些编辑器保存时会删除再创建文件）
+    config_watcher_->addPath(path);
+
+    // 重新加载配置
+    AppConfig new_cfg = load_config();
+    log("system", "config.json 已变更，正在重新加载...");
+
+    // 更新阈值（滑块 + 运行中的检测线程）
+    conf_threshold_ = new_cfg.box_threshold;
+    nms_threshold_ = new_cfg.nms_threshold;
+    conf_slider_->setValue((int)(conf_threshold_ * 100));
+    nms_slider_->setValue((int)(nms_threshold_ * 100));
+
+    // 如果检测线程正在运行，通知阈值变更（通过 DetectThread 重新设置）
+    if (detect_thread_) {
+        log("system", QString("阈值已更新: conf=%1, nms=%2 (下次启动生效)")
+            .arg(conf_threshold_, 0, 'f', 2).arg(nms_threshold_, 0, 'f', 2));
+    }
+
+    // 更新 WebSocket 报警类别
+    if (ws_server_) {
+        WebSocketConfig ws_cfg;
+        ws_cfg.server_host = QString::fromStdString(new_cfg.ws_host);
+        ws_cfg.server_port = new_cfg.ws_port;
+        ws_cfg.enable_alarm = true;
+        for (const auto &name : new_cfg.alarm_class_names)
+            ws_cfg.alarm_class_names.insert(name);
+        ws_server_->updateConfig(ws_cfg);
+        log("websocket", QString("报警类别已更新: %1 个类别")
+            .arg(new_cfg.alarm_class_names.size()));
+    }
+
+    log("system", "配置重新加载完成。");
+}
+
+// ============================================================
+// 检测结果导出
+// ============================================================
+
+void MainWindow::onExportResults() {
+    if (export_records_.empty()) {
+        QMessageBox::information(this, "提示", "暂无检测结果可导出。");
+        return;
+    }
+
+    QString path = QFileDialog::getSaveFileName(this, "导出检测结果", "",
+                    "JSON 文件 (*.json);;CSV 文件 (*.csv);;所有文件 (*.*)");
+    if (path.isEmpty()) return;
+
+    if (path.endsWith(".json", Qt::CaseInsensitive)) {
+        // 导出 JSON
+        QJsonArray records;
+        for (const auto &r : export_records_) {
+            QJsonObject obj;
+            obj["frame_id"] = r.frame_id;
+            obj["class_name"] = QString::fromStdString(r.class_name);
+            obj["confidence"] = QString::number(r.confidence * 100.0f, 'f', 1) + "%";
+            QJsonObject box;
+            box["left"] = r.left;
+            box["top"] = r.top;
+            box["right"] = r.right;
+            box["bottom"] = r.bottom;
+            obj["box"] = box;
+            records.append(obj);
+        }
+        QJsonObject root;
+        root["total_detections"] = static_cast<qint64>(export_records_.size());
+        root["detections"] = records;
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+            file.close();
+            log("system", QString("已导出 %1 条检测结果到 %2")
+                .arg(export_records_.size()).arg(path));
+        } else {
+            QMessageBox::warning(this, "错误", "无法写入文件: " + path);
+        }
+    } else {
+        // 导出 CSV
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream ts(&file);
+            ts << "frame_id,class_name,confidence,left,top,right,bottom\n";
+            for (const auto &r : export_records_) {
+                ts << r.frame_id << ","
+                   << QString::fromStdString(r.class_name) << ","
+                   << QString::number(r.confidence * 100.0f, 'f', 1) << "%,"
+                   << r.left << "," << r.top << "," << r.right << "," << r.bottom << "\n";
+            }
+            file.close();
+            log("system", QString("已导出 %1 条检测结果到 %2")
+                .arg(export_records_.size()).arg(path));
+        } else {
+            QMessageBox::warning(this, "错误", "无法写入文件: " + path);
+        }
+    }
 }

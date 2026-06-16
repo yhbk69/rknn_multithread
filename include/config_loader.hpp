@@ -2,49 +2,45 @@
  * config_loader.hpp - 运行时配置加载器
  * 
  * 从 config.json 加载运行时参数，提供默认值回退
- * 轻量级实现，不依赖第三方库
+ * 使用 nlohmann/json 解析
  */
 
 #ifndef CONFIG_LOADER_H
 #define CONFIG_LOADER_H
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <string>
 #include <vector>
 #include <libgen.h>
+#include <cstdio>
+#include <cstdlib>
 
+#include "nlohmann/json.hpp"
 #include "config.h"
+
+using json = nlohmann::json;
 
 /* 运行时配置结构体 */
 struct AppConfig
 {
-    // 模型配置
     std::string model_path;
-    std::string label_file;       // 仅文件名，路径从 model_path 推导
+    std::string label_file;
     int input_width;
     int input_height;
 
-    // 检测参数
     float nms_threshold;
     float box_threshold;
     int class_num;
 
-    // 运行时参数
     int thread_num;
 
-    // Anchor 参数 (3组，每组6个值)
     int anchor_small[6];
     int anchor_medium[6];
     int anchor_large[6];
 
-    // WebSocket 报警配置
     std::string ws_host;
     int ws_port;
     std::vector<std::string> alarm_class_names;
 
-    // 标签文件完整路径（运行时推导）
     std::string label_path;
 
     AppConfig()
@@ -67,7 +63,6 @@ struct AppConfig
         memcpy(anchor_large, default_large, sizeof(anchor_large));
     }
 
-    /* 从模型路径推导标签文件路径 */
     void resolve_label_path()
     {
         char* model_copy = strdup(model_path.c_str());
@@ -76,110 +71,6 @@ struct AppConfig
         free(model_copy);
     }
 };
-
-/* 简单 JSON 解析辅助函数 */
-static char* json_find_value(const char* json, const char* key)
-{
-    char search_key[256];
-    snprintf(search_key, sizeof(search_key), "\"%s\"", key);
-    const char* pos = strstr(json, search_key);
-    if (!pos) return nullptr;
-
-    pos = strchr(pos + strlen(search_key), ':');
-    if (!pos) return nullptr;
-    pos++;
-
-    // 跳过空白
-    while (*pos == ' ' || *pos == '\t' || *pos == '\n' || *pos == '\r') pos++;
-
-    if (*pos == '"')
-    {
-        // 字符串值
-        const char* start = pos + 1;
-        const char* end = strchr(start, '"');
-        if (!end) return nullptr;
-        size_t len = end - start;
-        char* val = (char*)malloc(len + 1);
-        strncpy(val, start, len);
-        val[len] = '\0';
-        return val;
-    }
-    else
-    {
-        // 数值
-        const char* start = pos;
-        const char* end = start;
-        while (*end && *end != ',' && *end != '}' && *end != ']' && *end != ' ' && *end != '\n') end++;
-        size_t len = end - start;
-        char* val = (char*)malloc(len + 1);
-        strncpy(val, start, len);
-        val[len] = '\0';
-        return val;
-    }
-}
-
-static std::vector<int> json_find_int_array(const char* json, const char* key)
-{
-    std::vector<int> result;
-    char search_key[256];
-    snprintf(search_key, sizeof(search_key), "\"%s\"", key);
-    const char* pos = strstr(json, search_key);
-    if (!pos) return result;
-
-    pos = strchr(pos + strlen(search_key), ':');
-    if (!pos) return result;
-    pos = strchr(pos, '[');
-    if (!pos) return result;
-    pos++;
-
-    while (*pos && *pos != ']')
-    {
-        if (*pos >= '0' && *pos <= '9')
-        {
-            result.push_back(atoi(pos));
-            while (*pos >= '0' && *pos <= '9') pos++;
-        }
-        else
-        {
-            pos++;
-        }
-    }
-    return result;
-}
-
-/* 解析 JSON 字符串数组，如 ["person", "car"] */
-static std::vector<std::string> json_find_string_array(const char* json, const char* key)
-{
-    std::vector<std::string> result;
-    char search_key[256];
-    snprintf(search_key, sizeof(search_key), "\"%s\"", key);
-    const char* pos = strstr(json, search_key);
-    if (!pos) return result;
-
-    pos = strchr(pos + strlen(search_key), ':');
-    if (!pos) return result;
-    pos = strchr(pos, '[');
-    if (!pos) return result;
-    pos++;
-
-    while (*pos && *pos != ']')
-    {
-        if (*pos == '"')
-        {
-            pos++;
-            const char* start = pos;
-            const char* end = strchr(start, '"');
-            if (!end) break;
-            result.push_back(std::string(start, end - start));
-            pos = end + 1;
-        }
-        else
-        {
-            pos++;
-        }
-    }
-    return result;
-}
 
 /* 加载配置文件 */
 static AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH)
@@ -198,60 +89,63 @@ static AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH)
     long size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    char* json = (char*)malloc(size + 1);
-    fread(json, 1, size, fp);
-    json[size] = '\0';
+    char* buf = (char*)malloc(size + 1);
+    fread(buf, 1, size, fp);
+    buf[size] = '\0';
     fclose(fp);
 
-    // 解析 model 部分
-    char* val;
-    val = json_find_value(json, "path");
-    if (val) { config.model_path = val; free(val); }
+    json j;
+    try {
+        j = json::parse(buf);
+    } catch (const json::parse_error& e) {
+        printf("Warning: JSON parse error: %s, using defaults.\n", e.what());
+        free(buf);
+        config.resolve_label_path();
+        return config;
+    }
+    free(buf);
 
-    val = json_find_value(json, "label_file");
-    if (val) { config.label_file = val; free(val); }
+    if (j.contains("model")) {
+        const auto& m = j["model"];
+        if (m.contains("path"))        config.model_path = m["path"].get<std::string>();
+        if (m.contains("label_file"))  config.label_file = m["label_file"].get<std::string>();
+        if (m.contains("input_width")) config.input_width = m["input_width"].get<int>();
+        if (m.contains("input_height"))config.input_height = m["input_height"].get<int>();
+    }
 
-    val = json_find_value(json, "input_width");
-    if (val) { config.input_width = atoi(val); free(val); }
+    if (j.contains("detection")) {
+        const auto& d = j["detection"];
+        if (d.contains("nms_threshold"))  config.nms_threshold = d["nms_threshold"].get<float>();
+        if (d.contains("box_threshold"))  config.box_threshold = d["box_threshold"].get<float>();
+        if (d.contains("class_num"))      config.class_num = d["class_num"].get<int>();
+    }
 
-    val = json_find_value(json, "input_height");
-    if (val) { config.input_height = atoi(val); free(val); }
+    if (j.contains("runtime")) {
+        const auto& r = j["runtime"];
+        if (r.contains("thread_num")) config.thread_num = r["thread_num"].get<int>();
+    }
 
-    // 解析 detection 部分
-    val = json_find_value(json, "nms_threshold");
-    if (val) { config.nms_threshold = atof(val); free(val); }
+    if (j.contains("anchor")) {
+        const auto& a = j["anchor"];
+        auto fill_arr = [](const json& arr, int* out) {
+            if (arr.is_array() && arr.size() == 6)
+                for (int i = 0; i < 6; i++) out[i] = arr[i].get<int>();
+        };
+        if (a.contains("small"))  fill_arr(a["small"], config.anchor_small);
+        if (a.contains("medium")) fill_arr(a["medium"], config.anchor_medium);
+        if (a.contains("large"))  fill_arr(a["large"], config.anchor_large);
+    }
 
-    val = json_find_value(json, "box_threshold");
-    if (val) { config.box_threshold = atof(val); free(val); }
-
-    val = json_find_value(json, "class_num");
-    if (val) { config.class_num = atoi(val); free(val); }
-
-    // 解析 runtime 部分
-    val = json_find_value(json, "thread_num");
-    if (val) { config.thread_num = atoi(val); free(val); }
-
-    // 解析 anchor 部分
-    auto arr = json_find_int_array(json, "small");
-    if (arr.size() == 6) memcpy(config.anchor_small, arr.data(), sizeof(config.anchor_small));
-
-    arr = json_find_int_array(json, "medium");
-    if (arr.size() == 6) memcpy(config.anchor_medium, arr.data(), sizeof(config.anchor_medium));
-
-    arr = json_find_int_array(json, "large");
-    if (arr.size() == 6) memcpy(config.anchor_large, arr.data(), sizeof(config.anchor_large));
-
-    // 解析 websocket 部分
-    val = json_find_value(json, "host");
-    if (val) { config.ws_host = val; free(val); }
-
-    val = json_find_value(json, "port");
-    if (val) { config.ws_port = atoi(val); free(val); }
-
-    auto str_arr = json_find_string_array(json, "alarm_class_names");
-    if (!str_arr.empty()) config.alarm_class_names = str_arr;
-
-    free(json);
+    if (j.contains("websocket")) {
+        const auto& w = j["websocket"];
+        if (w.contains("host")) config.ws_host = w["host"].get<std::string>();
+        if (w.contains("port")) config.ws_port = w["port"].get<int>();
+        if (w.contains("alarm_class_names") && w["alarm_class_names"].is_array()) {
+            config.alarm_class_names.clear();
+            for (const auto& name : w["alarm_class_names"])
+                config.alarm_class_names.push_back(name.get<std::string>());
+        }
+    }
 
     config.resolve_label_path();
     return config;

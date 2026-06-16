@@ -126,6 +126,7 @@ static int saveFloat(const char *file_name, float *output, int element_size)
  * 构造函数: 初始化模型路径和默认阈值
  */
 rkYolov5s::rkYolov5s(const std::string &model_path)
+    : post_ctx_(PostProcessContext())
 {
     this->model_path = model_path;
     // 从配置加载阈值
@@ -143,6 +144,13 @@ rkYolov5s::rkYolov5s(const std::string &model_path)
 int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
 {
     printf("Loading model...\n");
+
+    // 初始化后处理上下文（加载标签和 anchor）
+    if (post_ctx_.init(model_path.c_str()) < 0)
+    {
+        printf("Failed to init postprocess context\n");
+        return -1;
+    }
 
     // 从文件加载模型到内存
     int model_data_size = 0;
@@ -163,6 +171,8 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     if (ret < 0)
     {
         printf("rknn_init error ret=%d\n", ret);
+        free(model_data);
+        model_data = nullptr;
         return -1;
     }
 
@@ -185,6 +195,8 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     if (ret < 0)
     {
         printf("rknn_init core error ret=%d\n", ret);
+        free(model_data);
+        model_data = nullptr;
         return -1;
     }
 
@@ -194,6 +206,8 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     if (ret < 0)
     {
         printf("rknn_init error ret=%d\n", ret);
+        free(model_data);
+        model_data = nullptr;
         return -1;
     }
     printf("sdk version: %s driver version: %s\n", version.api_version, version.drv_version);
@@ -203,6 +217,8 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     if (ret < 0)
     {
         printf("rknn_init error ret=%d\n", ret);
+        free(model_data);
+        model_data = nullptr;
         return -1;
     }
     printf("model input num: %d, output num: %d\n", io_num.n_input, io_num.n_output);
@@ -213,6 +229,8 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     if (input_attrs == nullptr)
     {
         printf("calloc input_attrs failure\n");
+        free(model_data);
+        model_data = nullptr;
         return -1;
     }
     for (int i = 0; i < io_num.n_input; i++)
@@ -235,6 +253,8 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     if (output_attrs == nullptr)
     {
         printf("calloc output_attrs failure\n");
+        free(model_data);
+        model_data = nullptr;
         return -1;
     }
     for (int i = 0; i < io_num.n_output; i++)
@@ -311,25 +331,11 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     // 如果输入图像尺寸与模型期望尺寸不同，则需要缩放
     if (img_width != width || img_height != height)
     {
-        // 使用RGA硬件加速图像缩放(比OpenCV快很多)
-        rga_buffer_t src;
-        rga_buffer_t dst;
-        memset(&src, 0, sizeof(src));
-        memset(&dst, 0, sizeof(dst));
-        ret = resize_rga(src, dst, img, resized_img, target_size);
-        if (ret != 0)
-        {
-            fprintf(stderr, "resize with rga error\n");
-        }
-
-        /*********
-        // 备选方案: 使用OpenCV进行letterbox缩放(保持宽高比，填充黑边)
-        // 当前使用RGA方案，速度更快
+        // 使用Letterbox缩放(保持宽高比，填充灰边)
         float min_scale = std::min(scale_w, scale_h);
         scale_w = min_scale;
         scale_h = min_scale;
         letterbox(img, resized_img, pads, min_scale, target_size);
-        *********/
         inputs[0].buf = resized_img.data;
     }
     else
@@ -339,20 +345,52 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     }
 
     // 设置模型输入数据
-    rknn_inputs_set(ctx, io_num.n_input, inputs);
+    ret = rknn_inputs_set(ctx, io_num.n_input, inputs);
+    if (ret < 0)
+    {
+        fprintf(stderr, "[rkYolov5s] rknn_inputs_set failed, ret=%d\n", ret);
+        last_detect_result_.count = 0;
+        return orig_img;
+    }
 
     // 准备输出缓冲区
     rknn_output outputs[io_num.n_output];
     memset(outputs, 0, sizeof(outputs));
     for (int i = 0; i < io_num.n_output; i++)
     {
-        outputs[i].want_float = 0; // 输出为INT8量化数据，非浮点数
+        outputs[i].want_float = 0;
     }
 
-    // 执行模型推理
-    ret = rknn_run(ctx, NULL);
-    // 获取推理输出结果
-    ret = rknn_outputs_get(ctx, io_num.n_output, outputs, NULL);
+    // 执行模型推理（失败时重试，最多 3 次）
+    int max_retry = 3;
+    bool infer_ok = false;
+    for (int retry = 0; retry < max_retry; retry++)
+    {
+        ret = rknn_run(ctx, NULL);
+        if (ret < 0)
+        {
+            fprintf(stderr, "[rkYolov5s] rknn_run failed (retry %d/%d), ret=%d\n",
+                    retry + 1, max_retry, ret);
+            continue;
+        }
+        ret = rknn_outputs_get(ctx, io_num.n_output, outputs, NULL);
+        if (ret < 0)
+        {
+            fprintf(stderr, "[rkYolov5s] rknn_outputs_get failed (retry %d/%d), ret=%d\n",
+                    retry + 1, max_retry, ret);
+            rknn_outputs_release(ctx, io_num.n_output, outputs);
+            continue;
+        }
+        infer_ok = true;
+        break;
+    }
+
+    if (!infer_ok)
+    {
+        fprintf(stderr, "[rkYolov5s] inference failed after %d retries, skipping frame\n", max_retry);
+        last_detect_result_.count = 0;
+        return orig_img;
+    }
 
     // 后处理: 解码检测框、NMS过滤
     detect_result_group_t detect_result_group;
@@ -366,7 +404,7 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     }
 
     // 执行后处理: 解码边界框、置信度过滤、NMS去重
-    post_process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf, height, width,
+    post_ctx_.process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf, height, width,
                  box_conf_threshold, nms_threshold, pads, scale_w, scale_h, out_zps, out_scales, &detect_result_group);
 
     // 在原始图像上绘制检测框和标签
@@ -396,6 +434,10 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 
     // 释放输出缓冲区
     ret = rknn_outputs_release(ctx, io_num.n_output, outputs);
+    if (ret < 0)
+    {
+        fprintf(stderr, "[rkYolov5s] rknn_outputs_release failed, ret=%d\n", ret);
+    }
 
     return orig_img;
 }
@@ -405,8 +447,7 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
  */
 rkYolov5s::~rkYolov5s()
 {
-    // 释放后处理分配的标签内存
-    deinitPostProcess();
+    // post_ctx_ 析构函数自动清理标签内存
 
     // 销毁RKNN模型上下文
     ret = rknn_destroy(ctx);

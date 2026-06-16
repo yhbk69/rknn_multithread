@@ -62,7 +62,7 @@ public:
                  int thread_num = 3, float conf_threshold = 0.25f, float nms_threshold = 0.45f)
         : model_path_(model_path), video_path_(video_path), thread_num_(thread_num),
           conf_threshold_(conf_threshold), nms_threshold_(nms_threshold), running_(true) {
-        initLabelPath(model_path.c_str());
+        // 后处理上下文由每个 rkYolov5s 实例自行初始化
     }
 
     void stop() { running_.store(false); }
@@ -72,12 +72,16 @@ public:
     bool isPaused() const { return paused_.load(); }
     void set_thread_num(int n) { thread_num_ = n; }
     void setWebSocket(WebSocket* ws) { ws_ = ws; }
+    void setRoi(const QRect &roi) { roi_rect_ = roi; roi_enabled_ = !roi.isNull(); }
+    void clearRoi() { roi_rect_ = QRect(); roi_enabled_ = false; }
 
 signals:
     void frameReady(const QImage& image, double fps);
     void statsUpdated(int framesProcessed, double avgFps, double inferenceTime);
     void finished();
     void error(const QString& msg);
+    void detectionResult(int frameId, const QString& className, float confidence,
+                         int left, int top, int right, int bottom);
 
 protected:
     void run() override {
@@ -129,12 +133,59 @@ protected:
 
             long long infer_start = get_time_ms();
 
-            if (pool->put(img) != 0) break;
-            if (frames >= thread_num_ && pool->get(img) != 0) break;
+            // ROI 裁剪：如果有 ROI 区域，只对裁剪区域做检测
+            cv::Mat detect_img;
+            int roi_x = 0, roi_y = 0;
+            if (roi_enabled_ && !roi_rect_.isNull()) {
+                int x1 = qBound(0, roi_rect_.x(), img.cols - 1);
+                int y1 = qBound(0, roi_rect_.y(), img.rows - 1);
+                int x2 = qBound(x1 + 1, roi_rect_.x() + roi_rect_.width(), img.cols);
+                int y2 = qBound(y1 + 1, roi_rect_.y() + roi_rect_.height(), img.rows);
+                roi_x = x1;
+                roi_y = y1;
+                detect_img = img(cv::Range(y1, y2), cv::Range(x1, x2)).clone();
+            } else {
+                detect_img = img;
+            }
+
+            if (pool->put(detect_img) != 0) break;
+            if (frames >= thread_num_ && pool->get(detect_img) != 0) break;
+
+            // 如果有 ROI，将检测结果坐标偏移回原图，并绘制到原图上
+            if (roi_enabled_ && !roi_rect_.isNull() && frames >= thread_num_) {
+                detect_result_group_t &result = const_cast<detect_result_group_t&>(pool->getLastDetectResult());
+                for (int i = 0; i < result.count; i++) {
+                    result.results[i].box.left += roi_x;
+                    result.results[i].box.right += roi_x;
+                    result.results[i].box.top += roi_y;
+                    result.results[i].box.bottom += roi_y;
+                    // 在原图上绘制检测框
+                    char text[64];
+                    snprintf(text, sizeof(text), "%s %.0f%%", result.results[i].name, result.results[i].prop * 100);
+                    cv::rectangle(img,
+                        cv::Point(result.results[i].box.left, result.results[i].box.top),
+                        cv::Point(result.results[i].box.right, result.results[i].box.bottom),
+                        cv::Scalar(255, 0, 0), 2);
+                    cv::putText(img, text,
+                        cv::Point(result.results[i].box.left, result.results[i].box.top - 5),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 1);
+                }
+                img.copyTo(detect_img);
+            }
 
             // WebSocket 报警检查
             if (ws_ && ws_->isAlarmEnabled() && frames >= thread_num_) {
                 ws_->checkAndAlarm(&pool->getLastDetectResult(), frames);
+            }
+
+            // 收集检测结果用于导出
+            if (frames >= thread_num_) {
+                const detect_result_group_t &result = pool->getLastDetectResult();
+                for (int i = 0; i < result.count; i++) {
+                    const detect_result_t &det = result.results[i];
+                    emit detectionResult(frames, QString::fromUtf8(det.name), det.prop,
+                                         det.box.left, det.box.top, det.box.right, det.box.bottom);
+                }
             }
 
             long long infer_end = get_time_ms();
@@ -192,6 +243,8 @@ private:
     std::atomic<bool> paused_{false};
     std::atomic<bool> step_once_{false};
     WebSocket* ws_ = nullptr;
+    QRect roi_rect_;
+    bool roi_enabled_ = false;
 };
 
 // ============================================================
@@ -223,6 +276,9 @@ private slots:
     void onStepFrame();
     void onScreenshot();
     void onRecordToggle();
+    void onExportResults();
+    void onRoiToggle();
+    void onRoiClear();
 
     // WebSocket 相关
     void onWebSocketStarted(quint16 port);
@@ -265,11 +321,14 @@ private:
     QPushButton* step_btn_;
     QPushButton* screenshot_btn_;
     QPushButton* record_btn_;
+    QPushButton* export_btn_;
     QSpinBox* thread_spin_;
     QSlider* conf_slider_;
     QSlider* nms_slider_;
     QLabel* conf_value_label_;
     QLabel* nms_value_label_;
+    QPushButton* roi_btn_;
+    QPushButton* roi_clear_btn_;
 
     // --- 右侧面板 ---
     // 状态信息
@@ -309,6 +368,26 @@ private:
     QImage last_frame_;
     bool recording_ = false;
     std::unique_ptr<cv::VideoWriter> video_writer_;
+
+    // 检测结果历史（用于导出）
+    struct ExportRecord {
+        int frame_id;
+        std::string class_name;
+        float confidence;
+        int left, top, right, bottom;
+    };
+    std::vector<ExportRecord> export_records_;
+
+    // ROI 检测区域
+    bool roi_enabled_ = false;
+    bool roi_selecting_ = false;
+    QPoint roi_start_;
+    QRect roi_rect_;
+    QLabel* roi_status_label_;
+
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 };
 
 #endif // RK_MAINWINDOW_HPP
