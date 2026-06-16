@@ -226,9 +226,38 @@ void MainWindow::setupUI() {
         int ch = i;
         connect(video_btns_[i], &QPushButton::clicked, this, [this, ch]() { onBrowseVideo(ch); });
         connect(video_del_btns_[i], &QPushButton::clicked, this, [this, ch]() {
+            if (detect_threads_[ch] && !detect_threads_[ch]->isPaused()) {
+                QMessageBox::warning(this, "提示", "检测运行中不可删除视频源");
+                return;
+            }
+            if (detect_threads_[ch] && detect_threads_[ch]->isPaused()) {
+                detect_threads_[ch]->stop();
+                detect_threads_[ch]->wait();
+                delete detect_threads_[ch];
+                detect_threads_[ch] = nullptr;
+                bool all_done = true;
+                for (int j = 0; j < MAX_CHANNELS; j++)
+                    if (detect_threads_[j]) { all_done = false; break; }
+                if (all_done) {
+                    enableControls(false);
+                    model_status_label_->setText("已完成");
+                    model_status_label_->setStyleSheet("color: #8a9bb0; font-weight: bold;");
+                    model_status_left_label_->setText("已选择");
+                    model_status_left_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
+                    status_label_->setText("所有通道检测完成。");
+                }
+                log("system", QString("通道%1 已停止（暂停状态下删除视频源）").arg(ch + 1));
+            }
             video_edits_[ch]->clear();
             video_alias_edits_[ch]->clear();
             video_cells_[ch].channel_label->setText(QString("通道%1").arg(ch + 1));
+            video_cells_[ch].pixmap_item->setPixmap(QPixmap());
+            video_cells_[ch].overlay->setText("FPS: --");
+            video_cells_[ch].last_frame = QImage();
+            fps_labels_[ch]->setText("--");
+            frames_labels_[ch]->setText("0");
+            infer_time_labels_[ch]->setText("--");
+            last_frames_[ch] = QImage();
         });
         connect(video_alias_edits_[i], &QLineEdit::textChanged, this, [this, ch](const QString& text) {
             if (text.isEmpty())

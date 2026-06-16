@@ -44,7 +44,7 @@
 #include <mutex>
 #include <vector>
 #include <array>
-#include <sys/time.h>
+#include <chrono>
 
 #include <opencv2/opencv.hpp>
 
@@ -53,6 +53,9 @@
 #include "config_loader.hpp"
 #include "postprocess.h"
 #include "websocket.hpp"
+#include "pipeline/FrameReader.hpp"
+#include "pipeline/StatsCollector.hpp"
+#include "pipeline/ResultRenderer.hpp"
 
 static constexpr int MAX_CHANNELS = 4;
 
@@ -102,46 +105,36 @@ protected:
         }
         pool->set_thresholds(conf_threshold_, nms_threshold_);
 
-        cv::VideoCapture capture;
-        if (video_path_.length() == 1)
-            capture.open((int)(video_path_[0] - '0'));
-        else
-            capture.open(video_path_);
-
-        if (!capture.isOpened()) {
+        FrameReader reader(video_path_);
+        if (!reader.open()) {
             emit error(QString("[Ch%1] Cannot open video: %2").arg(channel_id_).arg(QString::fromStdString(video_path_)));
             emit finished();
             return;
         }
 
-        auto get_time_ms = []() -> long long {
-            struct timeval tv;
-            gettimeofday(&tv, nullptr);
-            return tv.tv_sec * 1000 + tv.tv_usec / 1000;
-        };
+        StatsCollector stats;
+        stats.start();
+        ResultRenderer renderer;
 
-        long long start_time = get_time_ms();
         int frames = 0;
-        long long before_time = start_time;
-        double current_fps = 0.0;
 
         while (running_.load()) {
             while (paused_.load() && running_.load()) {
-                if (step_once_.load()) {
-                    step_once_.store(false);
-                    break;
-                }
+                if (step_once_.exchange(false)) break;
                 QThread::msleep(50);
             }
             if (!running_.load()) break;
 
             cv::Mat img;
-            if (!capture.read(img)) break;
+            if (!reader.read(img)) {
+                emit error(QString("[Ch%1] Failed to read frame").arg(channel_id_));
+                break;
+            }
 
-            long long infer_start = get_time_ms();
+            long long infer_start = stats.elapsedMs();
 
-            cv::Mat detect_img;
             int roi_x = 0, roi_y = 0;
+            cv::Mat detect_img;
             if (roi_enabled_ && !roi_rect_.isNull()) {
                 int x1 = qBound(0, roi_rect_.x(), img.cols - 1);
                 int y1 = qBound(0, roi_rect_.y(), img.rows - 1);
@@ -159,7 +152,6 @@ protected:
             if (frames >= thread_num_) {
                 detect_result_group_t result = pool->getLastDetectResult();
 
-                // ROI 模式：将检测结果坐标偏移回原图并绘制
                 if (roi_enabled_ && !roi_rect_.isNull()) {
                     for (int i = 0; i < result.count; i++) {
                         result.results[i].box.left += roi_x;
@@ -171,13 +163,11 @@ protected:
                                           cv::Range(roi_x, roi_x + detect_img.cols)));
                 }
 
-                // 报警
                 if (auto ws = ws_.lock()) {
                     if (ws->isAlarmEnabled())
                         ws->checkAndAlarm(&result, frames);
                 }
 
-                // 发射检测结果信号
                 for (int i = 0; i < result.count; i++) {
                     const detect_result_t &det = result.results[i];
                     emit detectionResult(frames, QString::fromUtf8(det.name), det.prop,
@@ -185,29 +175,15 @@ protected:
                 }
             }
 
-            // 非 ROI 模式：detect_img 已由 infer() 绘制了检测框
             cv::Mat& out_frame = (frames >= thread_num_) ? detect_img : img;
+            double infer_time = (double)(stats.elapsedMs() - infer_start);
+            double current_fps = stats.updateFps(frames);
 
-            long long infer_end = get_time_ms();
-            double infer_time = (double)(infer_end - infer_start);
+            renderer.drawFps(out_frame, current_fps);
+            emit frameReady(renderer.toQImage(out_frame), current_fps);
 
-            if (frames % 30 == 0 && frames > 0) {
-                long long now = get_time_ms();
-                current_fps = 30.0 / float(now - before_time) * 1000.0;
-                before_time = now;
-            }
-            if (frames % 5 == 0) {
+            if (frames % 5 == 0)
                 emit statsUpdated(frames, current_fps, infer_time);
-            }
-
-            char fps_text[32];
-            snprintf(fps_text, sizeof(fps_text), "FPS: %.2f", current_fps);
-            cv::putText(out_frame, fps_text, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
-
-            cv::Mat rgb_img;
-            cv::cvtColor(out_frame, rgb_img, cv::COLOR_BGR2RGB);
-            QImage qimg(rgb_img.data, rgb_img.cols, rgb_img.rows, rgb_img.step, QImage::Format_RGB888);
-            emit frameReady(qimg.copy(), current_fps);
 
             frames++;
             QThread::msleep(1);
@@ -216,16 +192,13 @@ protected:
         while (running_.load()) {
             cv::Mat img;
             if (pool->get(img) != 0) break;
-            cv::Mat rgb_img;
-            cv::cvtColor(img, rgb_img, cv::COLOR_BGR2RGB);
-            QImage qimg(rgb_img.data, rgb_img.cols, rgb_img.rows, rgb_img.step, QImage::Format_RGB888);
-            emit frameReady(qimg.copy(), current_fps);
+            emit frameReady(renderer.toQImage(img), stats.getCurrentFps());
         }
 
-        long long end_time = get_time_ms();
-        double avg_fps = (end_time > start_time) ? float(frames) / float(end_time - start_time) * 1000.0 : 0.0;
+        double avg_fps = stats.calcAvgFps(frames);
         emit statsUpdated(frames, avg_fps, 0);
-        emit error(QString("[Ch%1] Finished. Frames: %2, Avg FPS: %3").arg(channel_id_).arg(frames).arg(avg_fps, 0, 'f', 2));
+        emit error(QString("[Ch%1] Finished. Frames: %2, Avg FPS: %3")
+                       .arg(channel_id_).arg(frames).arg(avg_fps, 0, 'f', 2));
         emit finished();
     }
 
