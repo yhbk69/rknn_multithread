@@ -61,7 +61,13 @@ static unsigned char *load_data(FILE *fp, size_t ofst, size_t sz)
         printf("buffer malloc failure.\n");
         return NULL;
     }
-    ret = fread(data, 1, sz, fp);
+    size_t read_bytes = fread(data, 1, sz, fp);
+    if (read_bytes != sz)
+    {
+        printf("blob read failure: expected %zu, got %zu\n", sz, read_bytes);
+        free(data);
+        return NULL;
+    }
     return data;
 }
 
@@ -103,6 +109,11 @@ static int saveFloat(const char *file_name, float *output, int element_size)
 {
     FILE *fp;
     fp = fopen(file_name, "w");
+    if (fp == NULL)
+    {
+        printf("saveFloat: cannot open %s\n", file_name);
+        return -1;
+    }
     for (int i = 0; i < element_size; i++)
     {
         fprintf(fp, "%.6f\n", output[i]);
@@ -199,21 +210,33 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     // 查询并设置输入张量属性
     // 获取每个输入张量的维度、数据类型、格式等信息
     input_attrs = (rknn_tensor_attr *)calloc(io_num.n_input, sizeof(rknn_tensor_attr));
+    if (input_attrs == nullptr)
+    {
+        printf("calloc input_attrs failure\n");
+        return -1;
+    }
     for (int i = 0; i < io_num.n_input; i++)
     {
         input_attrs[i].index = i;
         ret = rknn_query(ctx, RKNN_QUERY_INPUT_ATTR, &(input_attrs[i]), sizeof(rknn_tensor_attr));
-        if (ret < 0)
-        {
-            printf("rknn_init error ret=%d\n", ret);
-            return -1;
-        }
+    if (ret < 0)
+    {
+        printf("rknn_init error ret=%d\n", ret);
+        free(model_data);
+        model_data = nullptr;
+        return -1;
+    }
         dump_tensor_attr(&(input_attrs[i]));
     }
 
     // 查询并设置输出张量属性
     // YOLOv5s有3个输出，分别对应3个不同尺度的特征图
     output_attrs = (rknn_tensor_attr *)calloc(io_num.n_output, sizeof(rknn_tensor_attr));
+    if (output_attrs == nullptr)
+    {
+        printf("calloc output_attrs failure\n");
+        return -1;
+    }
     for (int i = 0; i < io_num.n_output; i++)
     {
         output_attrs[i].index = i;
@@ -351,7 +374,7 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     for (int i = 0; i < detect_result_group.count; i++)
     {
         detect_result_t *det_result = &(detect_result_group.results[i]);
-        sprintf(text, "%s %.1f%%", det_result->name, det_result->prop * 100);
+        snprintf(text, sizeof(text), "%s %.1f%%", det_result->name, det_result->prop * 100);
 
         int x1 = det_result->box.left;
         int y1 = det_result->box.top;
@@ -359,7 +382,7 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
         int y2 = det_result->box.bottom;
 
         // 绘制蓝色矩形框
-        rectangle(orig_img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(256, 0, 0, 256), 3);
+        rectangle(orig_img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255, 0, 0), 3);
         // 绘制类别名称和置信度
         putText(orig_img, text, cv::Point(x1, y1 + 12), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255));
     }

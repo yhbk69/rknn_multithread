@@ -83,7 +83,7 @@ void WebSocket::shutdown()
         QMutexLocker lock(&clients_mtx_);
         for (QWebSocket *client : clients_)
         {
-            client->close();
+            client->abort();
             client->deleteLater();
         }
         clients_.clear();
@@ -177,6 +177,12 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
         std::string name(det.name);
         if (config_.alarm_class_names.count(name) == 0)
             continue;
+
+        /* 速率限制：同一类别 1 秒内最多报警 1 次 */
+        auto it = last_alarm_time_.find(name);
+        if (it != last_alarm_time_.end() && (now_ms - it->second) < 1000)
+            continue;
+        last_alarm_time_[name] = now_ms;
 
         /* 构造报警消息 */
         QString alarmId = generateAlarmId();

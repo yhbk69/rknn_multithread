@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <cstring>
 #include <memory>
 #include <sys/time.h>
 
@@ -47,12 +48,19 @@ int main(int argc, char **argv)
 
     // 打开视频文件或摄像头
     cv::VideoCapture capture;
-    if (strlen(vedio_name) == 1)
-        // 如果参数长度为1，认为是摄像头序号(如"0")
-        capture.open((int)(vedio_name[0] - '0'));
+    int camera_id = atoi(vedio_name);
+    if (camera_id > 0 || strcmp(vedio_name, "0") == 0)
+        // 参数可解析为数字，认为是摄像头序号
+        capture.open(camera_id);
     else
         // 否则认为是视频文件路径
         capture.open(vedio_name);
+
+    if (!capture.isOpened())
+    {
+        printf("Failed to open video/camera: %s\n", vedio_name);
+        return -1;
+    }
 
     // 记录开始时间，用于计算总平均帧率
     struct timeval time;
@@ -119,7 +127,10 @@ int main(int argc, char **argv)
     // 计算并打印总平均帧率
     gettimeofday(&time, nullptr);
     auto endTime = time.tv_sec * 1000 + time.tv_usec / 1000;
-    printf("Average:\t %f fps/s\n", float(frames) / float(endTime - startTime) * 1000.0);
+    if (endTime > startTime)
+        printf("Average:\t %f fps/s\n", float(frames) / float(endTime - startTime) * 1000.0);
+    else
+        printf("Average:\t 0 fps/s\n");
 
     return 0;
 }

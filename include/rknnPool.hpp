@@ -34,10 +34,10 @@ protected:
     int getModelId();  // 轮询获取模型实例 ID，实现负载均衡
 
 public:
-    rknnPool(const std::string modelPath, int threadNum);
+    rknnPool(const std::string &modelPath, int threadNum);
     int init();  // 创建线程池和模型实例，第一个实例完整加载模型，后续实例共享权重
     // 提交推理任务到线程池（非阻塞）
-    int put(inputType inputData);
+    int put(const inputType &inputData);
     // 获取最早的推理结果（阻塞等待）
     int get(outputType &outputData);
     // 获取最近一次 get() 对应模型的检测结果
@@ -49,7 +49,7 @@ public:
 
 // 构造函数：初始化模型路径、线程数和任务计数器
 template <typename rknnModel, typename inputType, typename outputType>
-rknnPool<rknnModel, inputType, outputType>::rknnPool(const std::string modelPath, int threadNum)
+rknnPool<rknnModel, inputType, outputType>::rknnPool(const std::string &modelPath, int threadNum)
 {
     this->modelPath = modelPath;
     this->threadNum = threadNum;
@@ -96,14 +96,15 @@ int rknnPool<rknnModel, inputType, outputType>::getModelId()
 // 提交推理任务到线程池（非阻塞）
 // 将输入数据和对应的模型实例绑定后提交到线程池执行，返回的 future 存入队列
 template <typename rknnModel, typename inputType, typename outputType>
-int rknnPool<rknnModel, inputType, outputType>::put(inputType inputData)
+int rknnPool<rknnModel, inputType, outputType>::put(const inputType &inputData)
 {
     std::lock_guard<std::mutex> lock(queueMtx);
     int modelId = this->getModelId();
     auto model = models[modelId];
+    inputType img = inputData;
     futs.push(pool->submit([model](inputType img) -> outputType {
         return model->infer(img, nullptr);
-    }, inputData));
+    }, std::move(img)));
     model_ids_.push(modelId);
     return 0;
 }
@@ -113,13 +114,20 @@ int rknnPool<rknnModel, inputType, outputType>::put(inputType inputData)
 template <typename rknnModel, typename inputType, typename outputType>
 int rknnPool<rknnModel, inputType, outputType>::get(outputType &outputData)
 {
-    std::lock_guard<std::mutex> lock(queueMtx);
-    if(futs.empty() == true)
-        return 1;
-    outputData = futs.front().get();
-    futs.pop();
-    last_model_id_ = model_ids_.front();
-    model_ids_.pop();
+    std::future<outputType> fut;
+    int model_id;
+    {
+        std::lock_guard<std::mutex> lock(queueMtx);
+        if(futs.empty() == true)
+            return 1;
+        fut = std::move(futs.front());
+        futs.pop();
+        model_id = model_ids_.front();
+        model_ids_.pop();
+    }
+    // 在锁外等待推理完成，不阻塞 put()
+    outputData = fut.get();
+    last_model_id_ = model_id;
     return 0;
 }
 

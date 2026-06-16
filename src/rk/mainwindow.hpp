@@ -36,6 +36,7 @@
 #include <QShortcut>
 #include <QNetworkInterface>
 #include <QAbstractSocket>
+#include <QFileSystemWatcher>
 #include <atomic>
 #include <cstdio>
 #include <memory>
@@ -139,10 +140,14 @@ protected:
             long long infer_end = get_time_ms();
             double infer_time = (double)(infer_end - infer_start);
 
+            // 每 30 帧更新 FPS 和推理耗时
             if (frames % 30 == 0 && frames > 0) {
                 long long now = get_time_ms();
                 current_fps = 30.0 / float(now - before_time) * 1000.0;
                 before_time = now;
+            }
+            // 每帧更新 NPU 使用率（轻量读取 sysfs）
+            if (frames % 5 == 0) {
                 emit statsUpdated(frames, current_fps, infer_time);
             }
 
@@ -226,6 +231,9 @@ private slots:
     void onWebSocketAlarm(const QString &alarmId, const QString &alarmType,
                           int frameId, long long timestampMs);
 
+    // 配置热更新
+    void onConfigFileChanged(const QString &path);
+
 private:
     void log(const QString& category, const QString& message);
     QString currentTimestamp();
@@ -293,6 +301,7 @@ private:
     // 逻辑
     DetectThread* detect_thread_ = nullptr;
     std::unique_ptr<WebSocket> ws_server_;
+    std::unique_ptr<QFileSystemWatcher> config_watcher_;
     float conf_threshold_ = 0.25f;
     float nms_threshold_ = 0.45f;
     std::string model_path_;

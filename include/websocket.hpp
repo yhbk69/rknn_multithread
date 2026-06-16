@@ -29,10 +29,12 @@
 #include <QWebSocket>
 #include <QList>
 #include <QSet>
+#include <QMap>
 #include <QMutex>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QString>
+#include <map>
 #include <string>
 #include <set>
 #include <sys/time.h>
@@ -213,6 +215,8 @@ private:
 
     QList<FenceRegion> fences_;
     mutable QMutex fences_mtx_;
+
+    std::map<std::string, long long> last_alarm_time_;  // 速率限制：每类别最后报警时间
 
     int alarm_counter_ = 0;  // 报警计数器（用于生成 alarm_id）
 };

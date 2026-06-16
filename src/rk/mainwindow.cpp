@@ -62,6 +62,13 @@ MainWindow::MainWindow(QWidget* parent)
     } else {
         log("websocket", "服务器启动失败！");
     }
+
+    // 配置热更新：监听 config.json 变化
+    config_watcher_ = std::make_unique<QFileSystemWatcher>(this);
+    config_watcher_->addPath("config.json");
+    connect(config_watcher_.get(), &QFileSystemWatcher::fileChanged,
+            this, &MainWindow::onConfigFileChanged);
+    log("system", "已启用配置热更新，修改 config.json 自动生效。");
 }
 
 MainWindow::~MainWindow() {
@@ -926,8 +933,18 @@ void MainWindow::onStatsUpdated(int frames, double fps, double inferTime) {
         infer_time_label_->setText(QString("%1 ms").arg(inferTime, 0, 'f', 1));
     }
 
-    // 模拟 NPU 使用率 (实际应从 /sys 读取)
-    int usage = qBound(0, (int)(fps * 3), 100);
+    // 从 sysfs 读取真实 NPU 使用率
+    // 格式: "100@1000000000Hz" -> 取 @ 前的数字
+    int usage = 0;
+    FILE *fp = fopen("/sys/class/devfreq/fdab0000.npu/load", "r");
+    if (fp) {
+        char buf[64] = {0};
+        if (fgets(buf, sizeof(buf), fp)) {
+            usage = atoi(buf);
+            usage = qBound(0, usage, 100);
+        }
+        fclose(fp);
+    }
     npu_usage_bar_->setValue(usage);
 }
 

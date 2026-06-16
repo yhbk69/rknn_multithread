@@ -84,33 +84,32 @@ char *readLine(FILE *fp, char *buffer, int *len)
 {
   int ch;
   int i = 0;
-  size_t buff_len = 0;
+  size_t buf_cap = 256;
 
-  buffer = (char *)malloc(buff_len + 1);
+  buffer = (char *)malloc(buf_cap);
   if (!buffer)
-    return NULL; // 内存不足
+    return NULL;
 
-  // 逐字符读取直到换行或文件结束
   while ((ch = fgetc(fp)) != '\n' && ch != EOF)
   {
-    buff_len++;
-    void *tmp = realloc(buffer, buff_len + 1);
-    if (tmp == NULL)
+    if (i + 1 >= buf_cap)
     {
-      free(buffer);
-      return NULL; // 内存不足
+      buf_cap *= 2;
+      void *tmp = realloc(buffer, buf_cap);
+      if (tmp == NULL)
+      {
+        free(buffer);
+        return NULL;
+      }
+      buffer = (char *)tmp;
     }
-    buffer = (char *)tmp;
-
-    buffer[i] = (char)ch;
-    i++;
+    buffer[i++] = (char)ch;
   }
   buffer[i] = '\0';
 
-  *len = buff_len;
+  *len = i;
 
-  // 检测文件结束
-  if (ch == EOF && (i == 0 || ferror(fp)))
+  if (ch == EOF && i == 0)
   {
     free(buffer);
     return NULL;
@@ -128,7 +127,7 @@ char *readLine(FILE *fp, char *buffer, int *len)
 int readLines(const char *fileName, char *lines[], int max_line)
 {
   FILE *file = fopen(fileName, "r");
-  char *s;
+  char *s = NULL;
   int i = 0;
   int n = 0;
 
@@ -205,7 +204,7 @@ static int nms(int validCount, std::vector<float> &outputLocations, std::vector<
     for (int j = i + 1; j < validCount; ++j)
     {
       int m = order[j];
-      if (m == -1 || classIds[i] != filterId)
+      if (m == -1 || classIds[j] != filterId)
       {
         continue;
       }
@@ -545,7 +544,8 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
 
     // 复制类别名称
     char *label = labels[id];
-    strncpy(group->results[last_count].name, label, OBJ_NAME_MAX_SIZE);
+    strncpy(group->results[last_count].name, label, OBJ_NAME_MAX_SIZE - 1);
+    group->results[last_count].name[OBJ_NAME_MAX_SIZE - 1] = '\0';
 
     last_count++;
   }

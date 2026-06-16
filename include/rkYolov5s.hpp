@@ -13,15 +13,6 @@
 
 #include "opencv2/core/core.hpp"
 
-/* 辅助函数：打印张量属性信息（用于调试） */
-static void dump_tensor_attr(rknn_tensor_attr *attr);
-/* 辅助函数：从文件中读取指定偏移和大小的原始数据 */
-static unsigned char *load_data(FILE *fp, size_t ofst, size_t sz);
-/* 辅助函数：从指定路径加载模型文件到内存，并返回模型数据指针及其大小 */
-static unsigned char *load_model(const char *filename, int *model_size);
-/* 辅助函数：将浮点型输出数据保存到文件（用于调试） */
-static int saveFloat(const char *file_name, float *output, int element_size);
-
 /*
  * rkYolov5s - YOLOv5s 目标检测推理类
  *
@@ -55,6 +46,7 @@ public:
 
     /* 动态设置阈值（运行时由 GUI 传入） */
     void set_thresholds(float conf, float nms) {
+        std::lock_guard<std::mutex> lock(mtx);
         box_conf_threshold = conf;
         nms_threshold = nms;
     }
