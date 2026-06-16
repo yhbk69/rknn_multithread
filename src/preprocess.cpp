@@ -44,10 +44,22 @@ void letterbox(const cv::Mat &image, cv::Mat &padded_image, BOX_RECT &pads, cons
     pads.top = pad_height / 2;
     pads.bottom = pad_height - pads.top;
 
-    float tx = (float)pads.left;
-    float ty = (float)pads.top;
-    cv::Mat M = (cv::Mat_<float>(2, 3) << scale, 0, tx, 0, scale, ty);
-    cv::warpAffine(image, padded_image, M, target_size, cv::INTER_LINEAR, cv::BORDER_CONSTANT, pad_color);
+    // 尝试 RGA 硬件加速（不占用 CPU/NPU）：先缩放，再填充
+    cv::Mat resized(new_h, new_w, CV_8UC3);
+    rga_buffer_t src = wrapbuffer_virtualaddr((void *)image.data, image.cols, image.rows, RK_FORMAT_RGB_888);
+    rga_buffer_t mid = wrapbuffer_virtualaddr((void *)resized.data, new_w, new_h, RK_FORMAT_RGB_888);
+    int ret = imresize(src, mid, (double)new_w / image.cols, (double)new_h / image.rows);
+    if (ret == IM_STATUS_SUCCESS)
+    {
+        cv::copyMakeBorder(resized, padded_image, pads.top, pads.bottom, pads.left, pads.right,
+                           cv::BORDER_CONSTANT, pad_color);
+    }
+    else
+    {
+        // RGA 失败时回退 CPU warpAffine（一步完成缩放+填充）
+        cv::Mat M = (cv::Mat_<float>(2, 3) << scale, 0, (float)pads.left, 0, scale, (float)pads.top);
+        cv::warpAffine(image, padded_image, M, target_size, cv::INTER_LINEAR, cv::BORDER_CONSTANT, pad_color);
+    }
 }
 
 /**
