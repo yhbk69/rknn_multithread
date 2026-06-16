@@ -38,6 +38,7 @@ static int g_anchor2[6];
 static bool g_anchors_initialized = false;
 
 static char *labels[OBJ_CLASS_NUM];
+static int labels_ref_count = 0;  // 标签引用计数，防止多重释放
 
 /**
  * 初始化标签路径和Anchor参数
@@ -45,6 +46,8 @@ static char *labels[OBJ_CLASS_NUM];
  */
 void initLabelPath(const char* model_path)
 {
+    labels_ref_count++;
+
     if (g_anchors_initialized) return;
 
     /* 加载配置 */
@@ -556,6 +559,10 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
  */
 void deinitPostProcess()
 {
+  labels_ref_count--;
+  if (labels_ref_count > 0)
+    return;
+
   for (int i = 0; i < g_config.class_num; i++)
   {
     if (labels[i] != nullptr)

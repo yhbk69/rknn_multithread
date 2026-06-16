@@ -136,6 +136,11 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     // 从文件加载模型到内存
     int model_data_size = 0;
     model_data = load_model(model_path.c_str(), &model_data_size);
+    if (model_data == nullptr)
+    {
+        printf("Failed to load model: %s\n", model_path.c_str());
+        return -1;
+    }
 
     // 如果是第一个模型实例，则初始化新上下文；否则复用已有模型的参数
     // rknn_dup_context可以共享模型权重，节省内存

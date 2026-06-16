@@ -3,15 +3,14 @@
 #ifndef CORENUM_H
 #define CORENUM_H
 
-#include <stdio.h>
-
+#include <mutex>
 #include "rknn_api.h"
 
 // RK3588 NPU 核心数量，用于轮询分配
-const int RK3588 = 3;
+inline constexpr int RK3588 = 3;
 
 // 设置模型需要绑定的核心（线程安全，轮询分配）
-int get_core_num()
+inline int get_core_num()
 {
     static int core_num = 0;
     static std::mutex mtx;
