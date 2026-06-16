@@ -47,6 +47,8 @@ private:
 
     float nms_threshold, box_conf_threshold; // NMS 阈值和边界框置信度阈值
 
+    detect_result_group_t last_detect_result_; // 最近一次推理的检测结果
+
 public:
     /* 构造函数：指定模型文件路径，创建推理类实例 */
     rkYolov5s(const std::string &model_path);
@@ -55,6 +57,11 @@ public:
     void set_thresholds(float conf, float nms) {
         box_conf_threshold = conf;
         nms_threshold = nms;
+    }
+
+    /* 获取最近一次推理的检测结果 */
+    const detect_result_group_t& getLastDetectResult() const {
+        return last_detect_result_;
     }
 
     /*

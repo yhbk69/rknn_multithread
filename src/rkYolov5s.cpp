@@ -363,6 +363,8 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     if (out_group) {
         *out_group = detect_result_group;
     }
+    // 始终保存最近一次检测结果，供 getLastDetectResult() 获取
+    last_detect_result_ = detect_result_group;
 
     // 释放输出缓冲区
     ret = rknn_outputs_release(ctx, io_num.n_output, outputs);

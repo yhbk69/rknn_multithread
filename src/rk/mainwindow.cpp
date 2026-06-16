@@ -37,10 +37,39 @@ MainWindow::MainWindow(QWidget* parent)
     detectCameras();
     restoreSettings();
     log("system", "应用就绪，请加载模型。");
+
+    // 初始化 WebSocket 服务器
+    ws_server_ = std::make_unique<WebSocket>(this);
+
+    connect(ws_server_.get(), &WebSocket::serverStarted,
+            this, &MainWindow::onWebSocketStarted);
+    connect(ws_server_.get(), &WebSocket::clientConnected,
+            this, &MainWindow::onWebSocketClientConnected);
+    connect(ws_server_.get(), &WebSocket::clientDisconnected,
+            this, &MainWindow::onWebSocketClientDisconnected);
+    connect(ws_server_.get(), &WebSocket::alarmTriggered,
+            this, &MainWindow::onWebSocketAlarm);
+
+    WebSocketConfig ws_cfg;
+    ws_cfg.server_host = QString::fromStdString(init_cfg.ws_host);
+    ws_cfg.server_port = init_cfg.ws_port;
+    ws_cfg.enable_alarm = true;
+    for (const auto &name : init_cfg.alarm_class_names)
+        ws_cfg.alarm_class_names.insert(name);
+    if (ws_server_->init(ws_cfg) == 0) {
+        log("websocket", QString("服务器已启动: ws://%1:%2")
+            .arg(ws_cfg.server_host).arg(ws_cfg.server_port));
+    } else {
+        log("websocket", "服务器启动失败！");
+    }
 }
 
 MainWindow::~MainWindow() {
     saveSettings();
+    if (ws_server_) {
+        ws_server_->shutdown();
+        ws_server_.reset();
+    }
     if (detect_thread_) {
         detect_thread_->stop();
         detect_thread_->wait();
@@ -537,6 +566,14 @@ void MainWindow::setupUI() {
 
     status_grid->addWidget(npu_usage_bar_, 3, 0, 1, 4);
 
+    ws_status_label_ = makeStatusValue("未启动");
+    ws_clients_label_ = makeStatusValue("0");
+
+    status_grid->addWidget(makeStatusLabel("WebSocket:"), 4, 0);
+    status_grid->addWidget(ws_status_label_, 4, 1);
+    status_grid->addWidget(makeStatusLabel("客户端数:"), 4, 2);
+    status_grid->addWidget(ws_clients_label_, 4, 3);
+
     right_top_splitter->addWidget(status_group);
 
     // 摄像头列表组
@@ -830,6 +867,7 @@ void MainWindow::onStartDetection() {
     int thread_num = thread_spin_->value();
 
     detect_thread_ = new DetectThread(model_path_, video_path_, thread_num, conf_threshold_, nms_threshold_);
+    detect_thread_->setWebSocket(ws_server_.get());
     connect(detect_thread_, &DetectThread::frameReady, this, &MainWindow::onFrameReady);
     connect(detect_thread_, &DetectThread::statsUpdated, this, &MainWindow::onStatsUpdated);
     connect(detect_thread_, &DetectThread::finished, this, &MainWindow::onDetectFinished);
@@ -1002,4 +1040,49 @@ void MainWindow::onRecordToggle() {
         record_btn_->setText("录制");
         log("system", "录制已停止。");
     }
+}
+
+// ============================================================
+// WebSocket 槽函数
+// ============================================================
+
+void MainWindow::onWebSocketStarted(quint16 port) {
+    // 获取本机实际 IP 地址
+    QString localIp = "127.0.0.1";
+    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
+        if (iface.flags().testFlag(QNetworkInterface::IsUp) &&
+            iface.flags().testFlag(QNetworkInterface::IsRunning) &&
+            !iface.flags().testFlag(QNetworkInterface::IsLoopBack)) {
+            for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
+                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
+                    localIp = entry.ip().toString();
+                    break;
+                }
+            }
+            if (localIp != "127.0.0.1") break;
+        }
+    }
+    QString wsUrl = QString("ws://%1:%2").arg(localIp).arg(port);
+    ws_status_label_->setText(wsUrl);
+    ws_status_label_->setStyleSheet("color: #2ecc71; font-weight: bold;");
+    log("websocket", QString("服务器已启动: %1").arg(wsUrl));
+}
+
+void MainWindow::onWebSocketClientConnected(QWebSocket *client) {
+    int count = ws_server_->clientCount();
+    ws_clients_label_->setText(QString::number(count));
+    log("websocket", QString("客户端已连接: %1 (当前 %2 个)")
+        .arg(client->peerAddress().toString()).arg(count));
+}
+
+void MainWindow::onWebSocketClientDisconnected(QWebSocket *client) {
+    int count = ws_server_->clientCount();
+    ws_clients_label_->setText(QString::number(count));
+    log("websocket", QString("客户端已断开 (当前 %1 个)").arg(count));
+}
+
+void MainWindow::onWebSocketAlarm(const QString &alarmId, const QString &alarmType,
+                                   int frameId, long long timestampMs) {
+    log("alarm", QString("[%1] %2 (frame %3)")
+        .arg(alarmId, alarmType).arg(frameId));
 }

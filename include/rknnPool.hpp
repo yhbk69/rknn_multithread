@@ -26,7 +26,9 @@ private:
     std::mutex idMtx, queueMtx;     // idMtx: 保护 id 的互斥锁; queueMtx: 保护结果队列的互斥锁
     std::unique_ptr<dpool::ThreadPool> pool;                   // 线程池实例
     std::queue<std::future<outputType>> futs;                  // 推理结果的异步任务队列（按提交顺序排列）
+    std::queue<int> model_ids_;                                // 每个任务对应的模型 ID
     std::vector<std::shared_ptr<rknnModel>> models;            // 模型实例数组
+    int last_model_id_ = -1;                                   // 最近一次 get() 使用的模型 ID
 
 protected:
     int getModelId();  // 轮询获取模型实例 ID，实现负载均衡
@@ -38,6 +40,8 @@ public:
     int put(inputType inputData);
     // 获取最早的推理结果（阻塞等待）
     int get(outputType &outputData);
+    // 获取最近一次 get() 对应模型的检测结果
+    const detect_result_group_t& getLastDetectResult() const;
     // 动态设置所有模型实例的阈值
     void set_thresholds(float conf, float nms);
     ~rknnPool();  // 析构函数：等待所有剩余推理任务完成后释放资源
@@ -95,10 +99,12 @@ template <typename rknnModel, typename inputType, typename outputType>
 int rknnPool<rknnModel, inputType, outputType>::put(inputType inputData)
 {
     std::lock_guard<std::mutex> lock(queueMtx);
-    auto model = models[this->getModelId()];
+    int modelId = this->getModelId();
+    auto model = models[modelId];
     futs.push(pool->submit([model](inputType img) -> outputType {
         return model->infer(img, nullptr);
     }, inputData));
+    model_ids_.push(modelId);
     return 0;
 }
 
@@ -112,7 +118,16 @@ int rknnPool<rknnModel, inputType, outputType>::get(outputType &outputData)
         return 1;
     outputData = futs.front().get();
     futs.pop();
+    last_model_id_ = model_ids_.front();
+    model_ids_.pop();
     return 0;
+}
+
+// 获取最近一次 get() 对应模型的检测结果
+template <typename rknnModel, typename inputType, typename outputType>
+const detect_result_group_t& rknnPool<rknnModel, inputType, outputType>::getLastDetectResult() const
+{
+    return models[last_model_id_]->getLastDetectResult();
 }
 
 // 动态设置所有模型实例的阈值（需 rknnModel 提供 set_thresholds 方法）
@@ -132,6 +147,7 @@ rknnPool<rknnModel, inputType, outputType>::~rknnPool()
     {
         outputType temp = futs.front().get();
         futs.pop();
+        model_ids_.pop();
     }
 }
 

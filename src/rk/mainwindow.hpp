@@ -34,6 +34,8 @@
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
 #include <QShortcut>
+#include <QNetworkInterface>
+#include <QAbstractSocket>
 #include <atomic>
 #include <cstdio>
 #include <memory>
@@ -47,6 +49,7 @@
 #include "rknnPool.hpp"
 #include "config_loader.hpp"
 #include "postprocess.h"
+#include "websocket.hpp"
 
 // ============================================================
 // 检测工作线程
@@ -67,6 +70,7 @@ public:
     void stepFrame() { step_once_.store(true); paused_.store(false); }
     bool isPaused() const { return paused_.load(); }
     void set_thread_num(int n) { thread_num_ = n; }
+    void setWebSocket(WebSocket* ws) { ws_ = ws; }
 
 signals:
     void frameReady(const QImage& image, double fps);
@@ -127,6 +131,11 @@ protected:
             if (pool->put(img) != 0) break;
             if (frames >= thread_num_ && pool->get(img) != 0) break;
 
+            // WebSocket 报警检查
+            if (ws_ && ws_->isAlarmEnabled() && frames >= thread_num_) {
+                ws_->checkAndAlarm(&pool->getLastDetectResult(), frames);
+            }
+
             long long infer_end = get_time_ms();
             double infer_time = (double)(infer_end - infer_start);
 
@@ -177,6 +186,7 @@ private:
     std::atomic<bool> running_;
     std::atomic<bool> paused_{false};
     std::atomic<bool> step_once_{false};
+    WebSocket* ws_ = nullptr;
 };
 
 // ============================================================
@@ -208,6 +218,13 @@ private slots:
     void onStepFrame();
     void onScreenshot();
     void onRecordToggle();
+
+    // WebSocket 相关
+    void onWebSocketStarted(quint16 port);
+    void onWebSocketClientConnected(QWebSocket *client);
+    void onWebSocketClientDisconnected(QWebSocket *client);
+    void onWebSocketAlarm(const QString &alarmId, const QString &alarmType,
+                          int frameId, long long timestampMs);
 
 private:
     void log(const QString& category, const QString& message);
@@ -269,8 +286,13 @@ private:
     // 状态栏
     QLabel* status_label_;
 
+    // WebSocket 状态
+    QLabel* ws_status_label_;      // 显示 WebSocket 地址:端口
+    QLabel* ws_clients_label_;     // 显示连接的客户端数
+
     // 逻辑
     DetectThread* detect_thread_ = nullptr;
+    std::unique_ptr<WebSocket> ws_server_;
     float conf_threshold_ = 0.25f;
     float nms_threshold_ = 0.45f;
     std::string model_path_;

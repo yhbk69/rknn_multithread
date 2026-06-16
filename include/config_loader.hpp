@@ -39,6 +39,11 @@ struct AppConfig
     int anchor_medium[6];
     int anchor_large[6];
 
+    // WebSocket 报警配置
+    std::string ws_host;
+    int ws_port;
+    std::vector<std::string> alarm_class_names;
+
     // 标签文件完整路径（运行时推导）
     std::string label_path;
 
@@ -50,7 +55,9 @@ struct AppConfig
           nms_threshold(0.45f),
           box_threshold(0.25f),
           class_num(OBJ_CLASS_NUM),
-          thread_num(3)
+          thread_num(3),
+          ws_host("0.0.0.0"),
+          ws_port(9002)
     {
         int default_small[] = {10, 13, 16, 30, 33, 23};
         int default_medium[] = {30, 61, 62, 45, 59, 119};
@@ -140,6 +147,40 @@ static std::vector<int> json_find_int_array(const char* json, const char* key)
     return result;
 }
 
+/* 解析 JSON 字符串数组，如 ["person", "car"] */
+static std::vector<std::string> json_find_string_array(const char* json, const char* key)
+{
+    std::vector<std::string> result;
+    char search_key[256];
+    snprintf(search_key, sizeof(search_key), "\"%s\"", key);
+    const char* pos = strstr(json, search_key);
+    if (!pos) return result;
+
+    pos = strchr(pos + strlen(search_key), ':');
+    if (!pos) return result;
+    pos = strchr(pos, '[');
+    if (!pos) return result;
+    pos++;
+
+    while (*pos && *pos != ']')
+    {
+        if (*pos == '"')
+        {
+            pos++;
+            const char* start = pos;
+            const char* end = strchr(start, '"');
+            if (!end) break;
+            result.push_back(std::string(start, end - start));
+            pos = end + 1;
+        }
+        else
+        {
+            pos++;
+        }
+    }
+    return result;
+}
+
 /* 加载配置文件 */
 static AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH)
 {
@@ -199,6 +240,16 @@ static AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH)
 
     arr = json_find_int_array(json, "large");
     if (arr.size() == 6) memcpy(config.anchor_large, arr.data(), sizeof(config.anchor_large));
+
+    // 解析 websocket 部分
+    val = json_find_value(json, "host");
+    if (val) { config.ws_host = val; free(val); }
+
+    val = json_find_value(json, "port");
+    if (val) { config.ws_port = atoi(val); free(val); }
+
+    auto str_arr = json_find_string_array(json, "alarm_class_names");
+    if (!str_arr.empty()) config.alarm_class_names = str_arr;
 
     free(json);
 

@@ -15,7 +15,7 @@ if(ENABLE_QT)
     set(CMAKE_AUTOUIC ON)
     set(CMAKE_AUTORCC ON)
     
-    find_package(Qt5 QUIET COMPONENTS Core Widgets Gui)
+    find_package(Qt5 QUIET COMPONENTS Core Widgets Gui WebSockets)
     if(NOT Qt5_FOUND)
         message(WARNING "Qt5 not found, GUI disabled")
         set(ENABLE_QT OFF)
@@ -50,6 +50,8 @@ set(COMMON_SOURCES
 
 set(QT_SOURCES
     ${COMMON_SOURCES}
+    src/websocket.cpp
+    include/websocket.hpp
     src/rk/main_rk.cpp
     src/rk/mainwindow.cpp
     src/rk/mainwindow.hpp
@@ -67,7 +69,7 @@ if(ENABLE_QT)
         ${RKNN_RT_LIB}
         ${OpenCV_LIBS}
         ${RGA_LIB}
-        Qt5::Core Qt5::Widgets Qt5::Gui
+        Qt5::Core Qt5::Widgets Qt5::Gui Qt5::WebSockets Qt5::Network
         Threads::Threads
     )
     message(STATUS "Target: yolo_rk3588_qt")
