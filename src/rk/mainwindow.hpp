@@ -97,7 +97,7 @@ signals:
 
 protected:
     void run() override {
-        auto pool = std::make_unique<rknnPool<rkYolov5s, cv::Mat, cv::Mat>>(model_path_.c_str(), thread_num_);
+        auto pool = std::make_unique<rknnPool<rkYolov5s, cv::Mat, cv::Mat>>(model_path_.c_str(), thread_num_, channel_id_);
         if (pool->init() != 0) {
             emit error(QString("[Ch%1] rknnPool init failed!").arg(channel_id_));
             emit finished();
@@ -231,6 +231,8 @@ struct VideoCell {
     QLabel* channel_label = nullptr;
     QImage last_frame;
     double last_fps = 0.0;
+    QSize last_pix_size;                       // 用于 fitInView 尺寸变化检测
+    long long last_fps_text_update = 0;        // 用于 FPS 文本 5Hz 节流
 };
 
 // ============================================================

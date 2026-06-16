@@ -8,6 +8,7 @@
 #define RKNNPOOL_H
 
 #include "ThreadPool.hpp"
+#include "coreNum.hpp"
 #include <vector>
 #include <iostream>
 #include <mutex>
@@ -21,6 +22,7 @@ class rknnPool
 private:
     int threadNum;                  // 线程池中的线程数量（即模型实例数量）
     std::string modelPath;          // 模型文件路径
+    int channel_id_ = 0;            // P2-1: 通道编号，用于按通道固定 NPU 核心分配
 
     long long id;                   // 任务分配计数器，用于轮询选择模型实例
     std::mutex idMtx, queueMtx;     // idMtx: 保护 id 的互斥锁; queueMtx: 保护结果队列的互斥锁
@@ -35,7 +37,7 @@ protected:
     int getModelId();  // 轮询获取模型实例 ID，实现负载均衡
 
 public:
-    rknnPool(const std::string &modelPath, int threadNum);
+    rknnPool(const std::string &modelPath, int threadNum, int channelId = 0);
     int init();  // 创建线程池和模型实例，第一个实例完整加载模型，后续实例共享权重
     // 提交推理任务到线程池（非阻塞）
     int put(const inputType &inputData);
@@ -50,11 +52,12 @@ public:
 
 // 构造函数：初始化模型路径、线程数和任务计数器
 template <typename rknnModel, typename inputType, typename outputType>
-rknnPool<rknnModel, inputType, outputType>::rknnPool(const std::string &modelPath, int threadNum)
+rknnPool<rknnModel, inputType, outputType>::rknnPool(const std::string &modelPath, int threadNum, int channelId)
 {
     this->modelPath = modelPath;
     this->threadNum = threadNum;
     this->id = 0;
+    this->channel_id_ = channelId;
 }
 
 // 初始化方法：创建线程池和模型实例
@@ -74,9 +77,11 @@ int rknnPool<rknnModel, inputType, outputType>::init()
         return -1;
     }
     // 初始化模型，第一个实例完整加载，后续实例共享权重
+    // P2-1: 按 (channel_id + instance_idx) % 3 分配 NPU 核心
     for (int i = 0, ret = 0; i < threadNum; i++)
     {
-        ret = models[i]->init(models[0]->get_pctx(), i != 0);
+        int core = get_core_for_channel(channel_id_, i);
+        ret = models[i]->init(models[0]->get_pctx(), i != 0, core);
         if (ret != 0)
             return ret;
     }

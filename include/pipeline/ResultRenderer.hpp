@@ -15,6 +15,7 @@ public:
     }
 
     QImage toQImage(const cv::Mat& bgr_frame) {
+        if (bgr_frame.empty()) return QImage();
         cv::Mat rgb;
         cv::cvtColor(bgr_frame, rgb, cv::COLOR_BGR2RGB);
         return QImage(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888).copy();

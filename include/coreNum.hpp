@@ -1,15 +1,15 @@
 // coreNum.hpp - RKNN 多线程推理核心绑定工具
-// 提供 NPU 核心轮询分配功能，用于多线程场景下将模型绑定到不同的 NPU 核心
+// 提供 NPU 核心分配功能，支持全局轮询和按通道固定分配两种策略
 #ifndef CORENUM_H
 #define CORENUM_H
 
 #include <mutex>
 #include "rknn_api.h"
 
-// RK3588 NPU 核心数量，用于轮询分配
+// RK3588 NPU 核心数量
 inline constexpr int RK3588 = 3;
 
-// 设置模型需要绑定的核心（线程安全，轮询分配）
+// 全局轮询分配（旧策略，线程安全）
 inline int get_core_num()
 {
     static int core_num = 0;
@@ -21,4 +21,12 @@ inline int get_core_num()
     core_num++;
     return temp;
 }
+
+// P2-1: 按通道固定核心分配
+// 每路通道的实例按 (channel_id + instance_idx) % 3 分配核心，
+// 使不同通道的实例均匀分布在 3 个 NPU 核心上，减少核心争抢
+inline int get_core_for_channel(int channel_id, int instance_idx = 0) {
+    return (channel_id + instance_idx) % RK3588;
+}
+
 #endif

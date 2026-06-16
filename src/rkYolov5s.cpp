@@ -6,6 +6,7 @@
 #include "preprocess.h"
 #include "config_loader.hpp"
 
+#include <future>
 #include "opencv2/core/core.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
@@ -140,7 +141,7 @@ rkYolov5s::rkYolov5s(const std::string &model_path)
  * @param share_weight 是否共享模型参数(第一个实例为false，后续实例为true)
  * @return 0成功，-1失败
  */
-int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
+int rkYolov5s::init(rknn_context *ctx_in, bool share_weight, int core_num)
 {
     printf("Loading model...\n");
 
@@ -176,9 +177,10 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     }
 
     // 设置模型绑定的NPU核心
-    // RK3588有3个NPU核心，通过轮询分配实现负载均衡
+    // RK3588有3个NPU核心，支持按通道固定分配（P2-1）或全局轮询
     rknn_core_mask core_mask;
-    switch (get_core_num())
+    int core_id = (core_num >= 0) ? core_num : get_core_num();
+    switch (core_id)
     {
     case 0:
         core_mask = RKNN_NPU_CORE_0;
@@ -282,6 +284,9 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     inputs[0].fmt = RKNN_TENSOR_NHWC;    // 输入格式为NHWC(高宽通道)
     inputs[0].pass_through = 0;          // 不进行直通模式
 
+    // 预分配推理输入图像，避免每帧重新分配
+    resized_img_ = cv::Mat(height, width, CV_8UC3);
+
     return 0;
 }
 
@@ -294,7 +299,36 @@ rknn_context *rkYolov5s::get_pctx()
 }
 
 /**
- * 执行目标检测推理
+ * P2-3: 三级流水线 - Stage P (CPU)
+ * BGR→RGB 转换 + letterbox 缩放填充（纯 CPU 操作，可与其他实例的 NPU 推理重叠）
+ */
+static void stage_preprocess(cv::Mat &orig_img, rkYolov5s::PipelineData &data, int model_w, int model_h)
+{
+    cv::cvtColor(orig_img, data.rgb_img, cv::COLOR_BGR2RGB);
+    int img_w = data.rgb_img.cols;
+    int img_h = data.rgb_img.rows;
+    cv::Size target_size(model_w, model_h);
+    data.scale_w = (float)target_size.width / img_w;
+    data.scale_h = (float)target_size.height / img_h;
+
+    if (img_w != model_w || img_h != model_h)
+    {
+        float min_scale = std::min(data.scale_w, data.scale_h);
+        data.scale_w = min_scale;
+        data.scale_h = min_scale;
+        memset(&data.pads, 0, sizeof(BOX_RECT));
+        letterbox(data.rgb_img, data.padded_img, data.pads, min_scale, target_size);
+    }
+    else
+    {
+        data.scale_w = 1.0f;
+        data.scale_h = 1.0f;
+        memset(&data.pads, 0, sizeof(BOX_RECT));
+    }
+}
+
+/**
+ * 执行目标检测推理（三级流水线：P 预处理 → I NPU 推理 → O 后处理绘制）
  * @param orig_img   原始输入图像(BGR格式)
  * @param out_group  [可选] 输出原始检测结果组，传 NULL 时不输出
  * @return 绘制了检测框的图像
@@ -309,34 +343,17 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
         nms = nms_threshold;
     }
 
-    cv::Mat img;
-    cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
-    int img_width = img.cols;
-    int img_height = img.rows;
+    // P2-3: Stage P (CPU) — 预处理通过 std::async 异步执行，
+    // 当多实例并发推理时，本实例的预处理可与另一实例的 NPU 推理重叠
+    PipelineData data;
+    std::future<void> stage_p = std::async(std::launch::async, [&]() {
+        stage_preprocess(orig_img, data, width, height);
+    });
 
-    BOX_RECT pads;
-    memset(&pads, 0, sizeof(BOX_RECT));
-    cv::Size target_size(width, height);
-    cv::Mat resized_img(target_size.height, target_size.width, CV_8UC3);
+    // P2-3: Stage I (NPU) — 等待 Stage P 完成后设置输入并执行 NPU 推理
+    stage_p.wait();
 
-    float scale_w = (float)target_size.width / img.cols;
-    float scale_h = (float)target_size.height / img.rows;
-
-    if (img_width != width || img_height != height)
-    {
-        float min_scale = std::min(scale_w, scale_h);
-        scale_w = min_scale;
-        scale_h = min_scale;
-        letterbox(img, resized_img, pads, min_scale, target_size);
-        inputs[0].buf = resized_img.data;
-    }
-    else
-    {
-        scale_w = 1.0f;
-        scale_h = 1.0f;
-        memset(&pads, 0, sizeof(pads));
-        inputs[0].buf = img.data;
-    }
+    inputs[0].buf = data.padded_img.empty() ? data.rgb_img.data : data.padded_img.data;
 
     ret = rknn_inputs_set(ctx, io_num.n_input, inputs);
     if (ret < 0)
@@ -378,9 +395,10 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
         return orig_img;
     }
 
+    // P2-3: Stage O (CPU) — 后处理 + 绘制
     detect_result_group_t detect_result_group;
     post_ctx_.process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf,
-                 height, width, conf, nms, pads, scale_w, scale_h,
+                 height, width, conf, nms, data.pads, data.scale_w, data.scale_h,
                  out_zps_, out_scales_, &detect_result_group);
 
     char text[256];

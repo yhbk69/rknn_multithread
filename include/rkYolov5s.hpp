@@ -34,6 +34,7 @@ private:
     rknn_input inputs[1];               // 模型输入数据（单输入）
 
     int channel, width, height;   // 模型输入张量的通道数、宽度和高度
+    cv::Mat resized_img_;             // 预分配推理输入图像（避免每帧重新分配）
     std::vector<float> out_scales_;   // 预计算输出量化缩放因子
     std::vector<int32_t> out_zps_;   // 预计算输出量化零点
 
@@ -43,6 +44,16 @@ private:
     PostProcessContext post_ctx_;              // 独立的后处理上下文（支持多模型）
 
 public:
+    // P2-3: 三级流水线 Stage P 的输出数据
+    struct PipelineData {
+        cv::Mat rgb_img;          // BGR→RGB 转换后的图像
+        cv::Mat padded_img;       // letterbox 填充后的图像
+        BOX_RECT pads;
+        float scale_w = 1.0f;
+        float scale_h = 1.0f;
+    };
+
+
     /* 构造函数：指定模型文件路径，创建推理类实例 */
     rkYolov5s(const std::string &model_path);
 
@@ -64,9 +75,10 @@ public:
      *
      * @param ctx_in   外部传入的 RKNN 上下文指针（用于共享上下文场景）
      * @param isChild  是否为子线程实例（子线程复用父线程的上下文）
+     * @param core_num 指定绑定的 NPU 核心编号（-1 使用旧轮询策略）
      * @return         成功返回 0，失败返回非零值
      */
-    int init(rknn_context *ctx_in, bool isChild);
+    int init(rknn_context *ctx_in, bool isChild, int core_num = -1);
 
     /* 获取当前 RKNN 推理上下文的指针（用于子线程共享上下文） */
     rknn_context *get_pctx();

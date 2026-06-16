@@ -117,7 +117,12 @@ void MainWindow::onStartDetection() {
         return;
     }
 
-    int thread_num = thread_spin_->value();
+    // P2-2: 根据活跃通道数动态调节 thread_num
+    // 总实例数优化目标：4 路时每路 1 线程，3 路时每路 2 线程，1-2 路时每路 3 线程
+    int user_set = thread_spin_->value();
+    int recommended = (active_count >= 4) ? 1 : (active_count >= 3) ? 2 : 3;
+    int thread_num = (user_set < recommended) ? user_set : recommended;
+    if (thread_num < 1) thread_num = 1;
     export_records_.clear();
 
     for (int i = 0; i < MAX_CHANNELS; i++) {
@@ -145,6 +150,8 @@ void MainWindow::onStartDetection() {
         detect_threads_[i]->start();
         log("system", QString("通道%1 检测开始。来源：%2").arg(i + 1).arg(video_edits_[i]->text()));
     }
+
+    log("system", QString("thread_num 自适应: %1 路 × %2 线程").arg(active_count).arg(thread_num));
 
     enableControls(true);
     model_status_label_->setText("运行中");
@@ -201,15 +208,30 @@ void MainWindow::onFrameReady(int ch, const QImage& image, double fps) {
     VideoCell& cell = video_cells_[ch];
     QPixmap pix = QPixmap::fromImage(image);
     cell.pixmap_item->setPixmap(pix);
-    cell.scene->setSceneRect(pix.rect());
-    cell.view->fitInView(cell.pixmap_item, Qt::KeepAspectRatio);
 
-    cell.overlay->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
+    // P1-3: fitInView 只在尺寸变化时调用，避免每帧 layout 重算
+    if (pix.size() != cell.last_pix_size) {
+        cell.scene->setSceneRect(pix.rect());
+        cell.view->fitInView(cell.pixmap_item, Qt::KeepAspectRatio);
+        cell.last_pix_size = pix.size();
+    }
+
+    // P1-4: FPS 文本 5Hz 节流（每 200ms 更新一次）
+    long long now = QDateTime::currentMSecsSinceEpoch();
+    if (now - cell.last_fps_text_update >= 200) {
+        cell.overlay->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
+        cell.last_fps_text_update = now;
+    }
     cell.last_fps = fps;
 }
 
 void MainWindow::onStatsUpdated(int ch, int frames, double fps, double inferTime) {
     if (ch < 0 || ch >= MAX_CHANNELS) return;
+    // P1-4: 右侧面板 FPS/帧数 5Hz 节流
+    long long now = QDateTime::currentMSecsSinceEpoch();
+    static long long last_stats_update[MAX_CHANNELS] = {};
+    if (now - last_stats_update[ch] < 200) return;
+    last_stats_update[ch] = now;
     fps_labels_[ch]->setText(QString::number(fps, 'f', 1));
     frames_labels_[ch]->setText(QString::number(frames));
 
