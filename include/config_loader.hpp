@@ -72,9 +72,15 @@ struct AppConfig
     }
 };
 
-/* 加载配置文件 */
-static AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH)
+/* 加载配置文件（带缓存，多次调用只解析一次）
+ * force_reload = true 时强制重新解析（用于热更新场景） */
+inline AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH, bool force_reload = false)
 {
+    static AppConfig cached;
+    static bool loaded = false;
+    if (loaded && !force_reload)
+        return cached;
+
     AppConfig config;
 
     FILE* fp = fopen(config_path, "r");
@@ -82,6 +88,7 @@ static AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH)
     {
         printf("Warning: Cannot open config file '%s', using defaults.\n", config_path);
         config.resolve_label_path();
+        if (!loaded) { cached = config; loaded = true; }
         return config;
     }
 
@@ -101,6 +108,7 @@ static AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH)
         printf("Warning: JSON parse error: %s, using defaults.\n", e.what());
         free(buf);
         config.resolve_label_path();
+        if (!loaded) { cached = config; loaded = true; }
         return config;
     }
     free(buf);
@@ -148,7 +156,15 @@ static AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH)
     }
 
     config.resolve_label_path();
+    cached = config;
+    loaded = true;
     return config;
+}
+
+/* 强制重新加载配置（热更新时使用） */
+inline AppConfig reload_config(const char* config_path = DEFAULT_CONFIG_PATH)
+{
+    return load_config(config_path, true);
 }
 
 #endif /* CONFIG_LOADER_H */

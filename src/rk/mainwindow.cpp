@@ -31,7 +31,7 @@ MainWindow::MainWindow(QWidget* parent)
     restoreSettings();
     log("system", "应用就绪，请加载模型。");
 
-    ws_server_ = std::make_unique<WebSocket>(this);
+    ws_server_ = std::make_shared<WebSocket>(this);
 
     connect(ws_server_.get(), &WebSocket::serverStarted,
             this, &MainWindow::onWebSocketStarted);
@@ -56,7 +56,7 @@ MainWindow::MainWindow(QWidget* parent)
     }
 
     config_watcher_ = std::make_unique<QFileSystemWatcher>(this);
-    config_watcher_->addPath("config.json");
+    config_watcher_->addPath(QFileInfo("config.json").absoluteFilePath());
     connect(config_watcher_.get(), &QFileSystemWatcher::fileChanged,
             this, &MainWindow::onConfigFileChanged);
     log("system", "已启用配置热更新，修改 config.json 自动生效。");

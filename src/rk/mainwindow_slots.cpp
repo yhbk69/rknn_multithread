@@ -126,7 +126,7 @@ void MainWindow::onStartDetection() {
 
         std::string video_path = video_text.toStdString();
         detect_threads_[i] = new DetectThread(i, model_path_, video_path, thread_num, conf_threshold_, nms_threshold_);
-        detect_threads_[i]->setWebSocket(ws_server_.get());
+        detect_threads_[i]->setWebSocket(ws_server_);
 
         int ch = i;
         connect(detect_threads_[i], &DetectThread::frameReady, this,
@@ -165,17 +165,21 @@ void MainWindow::onStopDetection() {
 }
 
 void MainWindow::onPauseToggle() {
+    bool any_paused = false;
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (detect_threads_[i] && detect_threads_[i]->isPaused()) {
+            any_paused = true;
+            break;
+        }
+    }
     for (int i = 0; i < MAX_CHANNELS; i++) {
         if (!detect_threads_[i]) continue;
-        if (detect_threads_[i]->isPaused()) {
+        if (any_paused)
             detect_threads_[i]->resume();
-            pause_btn_->setText("暂停");
-        } else {
+        else
             detect_threads_[i]->pause();
-            pause_btn_->setText("继续");
-        }
-        break;
     }
+    pause_btn_->setText(any_paused ? "暂停" : "继续");
 }
 
 void MainWindow::onStepFrame() {
@@ -224,7 +228,7 @@ void MainWindow::onDetectFinished(int ch) {
     if (ch < 0 || ch >= MAX_CHANNELS) return;
     if (detect_threads_[ch]) {
         detect_threads_[ch]->wait();
-        detect_threads_[ch]->deleteLater();
+        delete detect_threads_[ch];
         detect_threads_[ch] = nullptr;
     }
 
@@ -258,15 +262,18 @@ void MainWindow::onConfThresholdChanged(int value) {
     conf_threshold_ = value / 100.0f;
     updateThresholdLabels();
     for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (detect_threads_[i]) {
-            detect_threads_[i]->set_thread_num(thread_spin_->value());
-        }
+        if (detect_threads_[i])
+            detect_threads_[i]->setThresholds(conf_threshold_, nms_threshold_);
     }
 }
 
 void MainWindow::onNmsThresholdChanged(int value) {
     nms_threshold_ = value / 100.0f;
     updateThresholdLabels();
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (detect_threads_[i])
+            detect_threads_[i]->setThresholds(conf_threshold_, nms_threshold_);
+    }
 }
 
 void MainWindow::onClearLog() {
@@ -371,11 +378,12 @@ void MainWindow::onWebSocketAlarm(const QString &alarmId, const QString &alarmTy
 void MainWindow::onConfigFileChanged(const QString &path) {
     Q_UNUSED(path);
     log("system", "检测到 config.json 变化，重新加载配置。");
-    AppConfig cfg = load_config();
+    AppConfig cfg = reload_config();
     conf_threshold_ = cfg.box_threshold;
     nms_threshold_ = cfg.nms_threshold;
     conf_slider_->setValue((int)(conf_threshold_ * 100));
     nms_slider_->setValue((int)(nms_threshold_ * 100));
     updateThresholdLabels();
-    config_watcher_->addPath("config.json");
+    config_watcher_->removePath(QFileInfo("config.json").absoluteFilePath());
+    config_watcher_->addPath(QFileInfo("config.json").absoluteFilePath());
 }

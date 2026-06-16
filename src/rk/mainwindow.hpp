@@ -74,7 +74,12 @@ public:
     void stepFrame() { step_once_.store(true); paused_.store(false); }
     bool isPaused() const { return paused_.load(); }
     void set_thread_num(int n) { thread_num_ = n; }
-    void setWebSocket(WebSocket* ws) { ws_ = ws; }
+    void setThresholds(float conf, float nms) {
+        conf_threshold_ = conf;
+        nms_threshold_ = nms;
+        // pool is local to run(), thresholds applied at next detection
+    }
+    void setWebSocket(std::weak_ptr<WebSocket> ws) { ws_ = ws; }
     void setRoi(const QRect &roi) { roi_rect_ = roi; roi_enabled_ = !roi.isNull(); }
     void clearRoi() { roi_rect_ = QRect(); roi_enabled_ = false; }
     int channelId() const { return channel_id_; }
@@ -169,8 +174,11 @@ protected:
             // 统一使用 detect_img 作为输出帧
             cv::Mat& out_frame = (frames >= thread_num_) ? detect_img : img;
 
-            if (ws_ && ws_->isAlarmEnabled() && frames >= thread_num_) {
-                ws_->checkAndAlarm(&pool->getLastDetectResult(), frames);
+            if (frames >= thread_num_) {
+                if (auto ws = ws_.lock()) {
+                    if (ws->isAlarmEnabled())
+                        ws->checkAndAlarm(&pool->getLastDetectResult(), frames);
+                }
             }
 
             if (frames >= thread_num_) {
@@ -233,7 +241,7 @@ private:
     std::atomic<bool> running_;
     std::atomic<bool> paused_{false};
     std::atomic<bool> step_once_{false};
-    WebSocket* ws_ = nullptr;
+    std::weak_ptr<WebSocket> ws_;
     QRect roi_rect_;
     bool roi_enabled_ = false;
 };
@@ -355,7 +363,7 @@ private:
 
     // 逻辑
     DetectThread* detect_threads_[MAX_CHANNELS] = {};
-    std::unique_ptr<WebSocket> ws_server_;
+    std::shared_ptr<WebSocket> ws_server_;
     std::unique_ptr<QFileSystemWatcher> config_watcher_;
     float conf_threshold_ = 0.25f;
     float nms_threshold_ = 0.45f;

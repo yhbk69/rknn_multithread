@@ -341,6 +341,9 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     else
     {
         // 图像尺寸匹配，直接使用原始图像数据
+        scale_w = 1.0f;
+        scale_h = 1.0f;
+        memset(&pads, 0, sizeof(pads));
         inputs[0].buf = img.data;
     }
 

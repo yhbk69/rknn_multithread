@@ -546,20 +546,19 @@ void WebSocket::handleSetFence(QWebSocket *client, const QJsonObject &json)
 
 QString WebSocket::generateAlarmId()
 {
-    FILE *fp = fopen("/proc/sys/kernel/random/uuid", "r");
-    if (fp)
-    {
-        char buf[40] = {0};
-        if (fread(buf, 1, 36, fp) == 36)
-        {
+    static const QString base_uuid = []() {
+        FILE *fp = fopen("/proc/sys/kernel/random/uuid", "r");
+        if (fp) {
+            char buf[40] = {0};
+            if (fread(buf, 1, 36, fp) == 36) {
+                fclose(fp);
+                return QString::fromLatin1(buf, 36);
+            }
             fclose(fp);
-            return QString::fromLatin1(buf, 36);
         }
-        fclose(fp);
-    }
-    /* fallback */
-    alarm_counter_++;
-    return QString("a_%1").arg(alarm_counter_, 6, 10, QChar('0'));
+        return QString("unknown");
+    }();
+    return QString("%1_%2").arg(base_uuid).arg(alarm_counter_++, 6, 10, QChar('0'));
 }
 
 void WebSocket::removeClient(QWebSocket *client)
