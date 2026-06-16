@@ -1,6 +1,6 @@
 /*
  * mainwindow.cpp - RK3588 Qt GUI 主窗口实现
- * 16:9 自适应布局，左右分栏
+ * 四路视频 2x2 网格布局，支持单路放大/缩小
  */
 
 #include "rk/mainwindow.hpp"
@@ -8,7 +8,6 @@
 #include <QMessageBox>
 #include <QGroupBox>
 #include <QFrame>
-#include <QScrollArea>
 #include <QDir>
 #include <QFileInfo>
 #include <QStyle>
@@ -20,9 +19,8 @@
 #include <QMouseEvent>
 
 MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent), detect_thread_(nullptr)
+    : QMainWindow(parent), expanded_ch_(-1)
 {
-    // 从 config.json 加载初始阈值
     AppConfig init_cfg = load_config();
     conf_threshold_ = init_cfg.box_threshold;
     nms_threshold_ = init_cfg.nms_threshold;
@@ -30,21 +28,17 @@ MainWindow::MainWindow(QWidget* parent)
     setupUI();
     setupStyle();
 
-    // 默认窗口大小 1280x720 (16:9)
-    resize(1280, 720);
+    resize(1600, 900);
 
-    // 居中显示
     if (QScreen* screen = QApplication::primaryScreen()) {
         QRect screenGeometry = screen->availableGeometry();
         move((screenGeometry.width() - width()) / 2,
              (screenGeometry.height() - height()) / 2);
     }
 
-    detectCameras();
     restoreSettings();
     log("system", "应用就绪，请加载模型。");
 
-    // 初始化 WebSocket 服务器
     ws_server_ = std::make_unique<WebSocket>(this);
 
     connect(ws_server_.get(), &WebSocket::serverStarted,
@@ -69,7 +63,6 @@ MainWindow::MainWindow(QWidget* parent)
         log("websocket", "服务器启动失败！");
     }
 
-    // 配置热更新：监听 config.json 变化
     config_watcher_ = std::make_unique<QFileSystemWatcher>(this);
     config_watcher_->addPath("config.json");
     connect(config_watcher_.get(), &QFileSystemWatcher::fileChanged,
@@ -79,413 +72,78 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow() {
     saveSettings();
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (detect_threads_[i]) {
+            detect_threads_[i]->stop();
+            detect_threads_[i]->wait();
+            delete detect_threads_[i];
+            detect_threads_[i] = nullptr;
+        }
+    }
     if (ws_server_) {
         ws_server_->shutdown();
         ws_server_.reset();
     }
-    if (detect_thread_) {
-        detect_thread_->stop();
-        detect_thread_->wait();
-        delete detect_thread_;
-        detect_thread_ = nullptr;
-    }
 }
 
 // ============================================================
-// ROI 检测区域
+// 缩放控制
 // ============================================================
 
-void MainWindow::onRoiToggle() {
-    roi_enabled_ = !roi_enabled_;
-    if (roi_enabled_) {
-        roi_btn_->setText("取消框选");
-        roi_btn_->setObjectName("stopBtn");
-        roi_btn_->setStyleSheet("background-color: #922b21; border-color: #c0392b; color: white; font-weight: bold;");
-        roi_status_label_->setText("请在画面上拖拽框选");
-        roi_status_label_->setStyleSheet("color: #ffb74d; font-size: 12px;");
-        log("system", "ROI 框选模式已开启，在画面上拖拽鼠标选择区域。");
-    } else {
-        roi_btn_->setText("框选区域");
-        roi_btn_->setObjectName("");
-        roi_btn_->setStyleSheet("");
-        if (!roi_rect_.isNull()) {
-            roi_status_label_->setText(QString("区域: %1x%2").arg(roi_rect_.width()).arg(roi_rect_.height()));
-            roi_status_label_->setStyleSheet("color: #2ecc71; font-size: 12px;");
+void MainWindow::onZoomIn(int ch) {
+    if (ch < 0 || ch >= MAX_CHANNELS) return;
+    expanded_ch_ = ch;
+    updateZoomState();
+    log("system", QString("通道 %1 放大显示").arg(ch + 1));
+}
+
+void MainWindow::onZoomOut() {
+    expanded_ch_ = -1;
+    updateZoomState();
+    log("system", "恢复四分屏显示");
+}
+
+void MainWindow::updateZoomState() {
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (!video_cells_[i].container) continue;
+        if (expanded_ch_ == -1) {
+            // 网格模式：所有通道可见
+            video_cells_[i].container->show();
+            video_cells_[i].zoom_in_btn->show();
+            video_cells_[i].zoom_out_btn->hide();
+            grid_layout_->addWidget(video_cells_[i].container, i / 2, i % 2);
+        } else if (i == expanded_ch_) {
+            // 放大模式：选中的通道占满整个网格
+            video_cells_[i].container->show();
+            video_cells_[i].zoom_in_btn->hide();
+            video_cells_[i].zoom_out_btn->show();
+            grid_layout_->addWidget(video_cells_[i].container, 0, 0, 2, 2);
         } else {
-            roi_status_label_->setText("全画面");
-            roi_status_label_->setStyleSheet("color: #8a9bb0; font-size: 12px;");
-        }
-        log("system", "ROI 框选模式已关闭。");
-    }
-}
-
-void MainWindow::onRoiClear() {
-    roi_rect_ = QRect();
-    roi_enabled_ = false;
-    roi_btn_->setText("框选区域");
-    roi_btn_->setObjectName("");
-    roi_btn_->setStyleSheet("");
-    roi_clear_btn_->setEnabled(false);
-    roi_status_label_->setText("全画面");
-    roi_status_label_->setStyleSheet("color: #8a9bb0; font-size: 12px;");
-    log("system", "ROI 区域已清除，恢复全画面检测。");
-}
-
-void MainWindow::mousePressEvent(QMouseEvent *event) {
-    if (!roi_enabled_) {
-        QMainWindow::mousePressEvent(event);
-        return;
-    }
-    // 只在显示区域响应
-    if (event->button() == Qt::LeftButton && display_view_->geometry().contains(event->pos())) {
-        roi_start_ = event->pos();
-        roi_selecting_ = true;
-    }
-}
-
-void MainWindow::mouseMoveEvent(QMouseEvent *event) {
-    if (!roi_selecting_) {
-        QMainWindow::mouseMoveEvent(event);
-        return;
-    }
-    // 画面上临时显示选择框（通过更新 overlay）
-    QRect current = QRect(roi_start_, event->pos()).normalized();
-    roi_status_label_->setText(QString("选择中: %1x%2").arg(current.width()).arg(current.height()));
-}
-
-void MainWindow::mouseReleaseEvent(QMouseEvent *event) {
-    if (!roi_selecting_) {
-        QMainWindow::mouseReleaseEvent(event);
-        return;
-    }
-    roi_selecting_ = false;
-
-    if (event->button() == Qt::LeftButton) {
-        QRect selection = QRect(roi_start_, event->pos()).normalized();
-
-        // 将屏幕坐标转换为图像坐标
-        QRect viewGeom = display_view_->geometry();
-        QPixmap pix = pixmap_item_->pixmap();
-        if (pix.isNull()) {
-            QMainWindow::mouseReleaseEvent(event);
-            return;
-        }
-
-        // 计算图像在视图中的显示区域（fitInView 后的实际位置）
-        QRectF sceneRect = pixmap_item_->boundingRect();
-        QRectF mappedRect = display_view_->mapToScene(viewGeom).boundingRect();
-
-        double scaleX = (double)pix.width() / sceneRect.width();
-        double scaleY = (double)pix.height() / sceneRect.height();
-
-        int imgX1 = (int)((selection.left() - mappedRect.left()) * scaleX);
-        int imgY1 = (int)((selection.top() - mappedRect.top()) * scaleY);
-        int imgX2 = (int)((selection.right() - mappedRect.left()) * scaleX);
-        int imgY2 = (int)((selection.bottom() - mappedRect.top()) * scaleY);
-
-        // 限制在图像范围内
-        imgX1 = qBound(0, imgX1, pix.width() - 1);
-        imgY1 = qBound(0, imgY1, pix.height() - 1);
-        imgX2 = qBound(0, imgX2, pix.width() - 1);
-        imgY2 = qBound(0, imgY2, pix.height() - 1);
-
-        if (imgX2 > imgX1 && imgY2 > imgY1) {
-            roi_rect_ = QRect(imgX1, imgY1, imgX2 - imgX1, imgY2 - imgY1);
-            roi_clear_btn_->setEnabled(true);
-            roi_status_label_->setText(QString("区域: (%1,%2) %3x%4")
-                .arg(roi_rect_.x()).arg(roi_rect_.y())
-                .arg(roi_rect_.width()).arg(roi_rect_.height()));
-            roi_status_label_->setStyleSheet("color: #2ecc71; font-size: 12px;");
-            log("system", QString("ROI 区域已设置: (%1,%2) %3x%4")
-                .arg(roi_rect_.x()).arg(roi_rect_.y())
-                .arg(roi_rect_.width()).arg(roi_rect_.height()));
+            // 放大模式：其他通道隐藏
+            video_cells_[i].container->hide();
         }
     }
+    grid_layout_->invalidate();
 }
 
 // ============================================================
-// 样式表
+// ROI 检测区域（简化版：对所有通道生效）
 // ============================================================
-void MainWindow::setupStyle() {
-    qApp->setStyleSheet(R"(
-        /* 全局 - 黑色背景，浅色字体 */
-        QMainWindow, QWidget {
-            font-family: "Segoe UI", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
-            font-size: 13px;
-            color: #e8e8e8;
-            background-color: #0a0a0a;
-        }
 
-        /* 分组框 - 深灰色功能区 */
-        QGroupBox {
-            font-weight: bold;
-            border: 1px solid #3a3a3a;
-            border-radius: 6px;
-            margin-top: 14px;
-            padding: 14px 10px 10px 10px;
-            background-color: #1a1a1a;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 12px;
-            padding: 0 8px;
-            color: #5dade2;
-        }
-
-        /* 输入框 */
-        QLineEdit {
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            padding: 6px 10px;
-            background-color: #141414;
-            color: #f5f5f5;
-            selection-background-color: #1a5276;
-            font-size: 13px;
-        }
-        QLineEdit:focus {
-            border: 1px solid #3498db;
-            background-color: #1a1a1a;
-        }
-        QLineEdit:disabled {
-            background-color: #1a1a1a;
-            color: #555555;
-        }
-
-        /* 按钮 */
-        QPushButton {
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            padding: 7px 16px;
-            background-color: #252525;
-            color: #f0f0f0;
-            min-height: 26px;
-            font-size: 13px;
-        }
-        QPushButton:hover {
-            background-color: #333333;
-            border: 1px solid #4a4a4a;
-            color: #ffffff;
-        }
-        QPushButton:pressed {
-            background-color: #1a1a1a;
-        }
-        QPushButton:disabled {
-            background-color: #1a1a1a;
-            color: #444444;
-        }
-
-        /* 开始按钮 - 蓝色调 */
-        QPushButton#startBtn {
-            background-color: #1a5276;
-            border-color: #2980b9;
-            color: #ffffff;
-            font-weight: bold;
-        }
-        QPushButton#startBtn:hover {
-            background-color: #2980b9;
-        }
-        QPushButton#startBtn:disabled {
-            background-color: #1a1a1a;
-            color: #444444;
-        }
-
-        /* 停止按钮 - 暖红色调 */
-        QPushButton#stopBtn {
-            background-color: #922b21;
-            border-color: #c0392b;
-            color: #ffffff;
-            font-weight: bold;
-        }
-        QPushButton#stopBtn:hover {
-            background-color: #c0392b;
-        }
-        QPushButton#stopBtn:disabled {
-            background-color: #1a1a1a;
-            color: #444444;
-        }
-
-        /* 滑块 */
-        QSlider::groove:horizontal {
-            border: none;
-            height: 6px;
-            background: #333333;
-            border-radius: 3px;
-        }
-        QSlider::handle:horizontal {
-            background: #3498db;
-            border: none;
-            width: 16px;
-            height: 16px;
-            margin: -5px 0;
-            border-radius: 8px;
-        }
-        QSlider::handle:horizontal:hover {
-            background: #5dade2;
-        }
-        QSlider::sub-page:horizontal {
-            background: #3498db;
-            border-radius: 3px;
-        }
-
-        /* SpinBox */
-        QSpinBox {
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            padding: 5px 8px;
-            background-color: #141414;
-            color: #f5f5f5;
-            min-height: 26px;
-        }
-
-        /* 日志区 */
-        QTextEdit {
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            background-color: #0f0f0f;
-            color: #e0e0e0;
-            font-family: "Cascadia Code", "JetBrains Mono", "Consolas", monospace;
-            font-size: 12px;
-            padding: 6px;
-        }
-
-        /* 摄像头列表 */
-        QListWidget {
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            background-color: #141414;
-            color: #e8e8e8;
-            padding: 4px;
-            outline: none;
-        }
-        QListWidget::item {
-            padding: 5px 8px;
-            border-radius: 3px;
-            margin: 1px 2px;
-        }
-        QListWidget::item:selected {
-            background-color: #1a5276;
-            color: #ffffff;
-        }
-        QListWidget::item:hover {
-            background-color: #2a2a2a;
-        }
-
-        /* ComboBox */
-        QComboBox {
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            padding: 5px 10px;
-            background-color: #141414;
-            color: #e8e8e8;
-            min-height: 26px;
-        }
-        QComboBox:hover {
-            border: 1px solid #4a4a4a;
-        }
-        QComboBox::drop-down {
-            border: none;
-            width: 22px;
-        }
-        QComboBox QAbstractItemView {
-            background-color: #141414;
-            color: #e8e8e8;
-            selection-background-color: #1a5276;
-            border: 1px solid #3a3a3a;
-        }
-
-        /* ProgressBar */
-        QProgressBar {
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            background-color: #141414;
-            text-align: center;
-            color: #e8e8e8;
-            min-height: 20px;
-            font-size: 12px;
-        }
-        QProgressBar::chunk {
-            background-color: #1a5276;
-            border-radius: 3px;
-        }
-
-        /* 状态栏 */
-        QStatusBar {
-            background-color: #1a1a1a;
-            color: #e8e8e8;
-            font-size: 12px;
-            border-top: 1px solid #3a3a3a;
-        }
-
-        /* Splitter */
-        QSplitter::handle {
-            background-color: #2a2a2a;
-        }
-        QSplitter::handle:horizontal {
-            width: 3px;
-        }
-        QSplitter::handle:vertical {
-            height: 3px;
-        }
-        QSplitter::handle:hover {
-            background-color: #3498db;
-        }
-
-        /* Label 样式 */
-        QLabel {
-            color: #e0e0e0;
-        }
-        QLabel#statusValue {
-            color: #2ecc71;
-            font-weight: bold;
-            font-size: 13px;
-        }
-        QLabel#statusHeader {
-            color: #95a5a6;
-            font-size: 12px;
-        }
-        QLabel#overlayLabel {
-            background-color: rgba(0, 0, 0, 200);
-            color: #2ecc71;
-            font-family: "Cascadia Code", "Consolas", monospace;
-            font-size: 14px;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-
-        /* ScrollBar */
-        QScrollBar:vertical {
-            background-color: #141414;
-            width: 10px;
-            margin: 0;
-        }
-        QScrollBar::handle:vertical {
-            background-color: #444444;
-            min-height: 30px;
-            border-radius: 5px;
-        }
-        QScrollBar::handle:vertical:hover {
-            background-color: #555555;
-        }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-            height: 0px;
-        }
-        QScrollBar:horizontal {
-            background-color: #141414;
-            height: 10px;
-        }
-        QScrollBar::handle:horizontal {
-            background-color: #444444;
-            min-width: 30px;
-            border-radius: 5px;
-        }
-        QScrollBar::handle:horizontal:hover {
-            background-color: #555555;
-        }
-        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-            width: 0px;
-        }
-    )");
+void MainWindow::onScreenshot() {
+    // 截取当前活跃通道的帧
+    int ch = (expanded_ch_ >= 0) ? expanded_ch_ : 0;
+    if (last_frames_[ch].isNull()) {
+        log("system", "无可用帧进行截图。");
+        return;
+    }
+    QString fileName = QFileDialog::getSaveFileName(this, "保存截图",
+        QString("screenshot_ch%1_%2.png").arg(ch + 1).arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss")),
+        "PNG (*.png);;JPEG (*.jpg)");
+    if (!fileName.isEmpty()) {
+        last_frames_[ch].save(fileName);
+        log("system", QString("截图已保存: %1").arg(fileName));
+    }
 }
 
 // ============================================================
@@ -498,47 +156,93 @@ void MainWindow::setupUI() {
     AppConfig cfg = load_config();
 
     // =============================================
-    // 主分割器：左右分栏 (2:1 比例)
+    // 主分割器：左右分栏 (3:1)
     // =============================================
     QSplitter* main_splitter = new QSplitter(Qt::Horizontal, this);
     main_splitter->setHandleWidth(4);
 
     // =============================================
-    // 左侧面板：检测窗口 + 控制区
+    // 左侧面板：2x2 视频网格 + 控制区
     // =============================================
     QWidget* left_panel = new QWidget();
     QVBoxLayout* left_layout = new QVBoxLayout(left_panel);
     left_layout->setContentsMargins(0, 0, 0, 0);
-    left_layout->setSpacing(6);
+    left_layout->setSpacing(4);
 
-    // -- 检测显示区 (占据主要空间) --
-    display_view_ = new QGraphicsView(left_panel);
-    display_view_->setMinimumSize(320, 240);
-    display_view_->setRenderHint(QPainter::Antialiasing);
-    display_view_->setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
-    display_view_->setStyleSheet(
-        "QGraphicsView { border: 2px dashed #3a3a3a; border-radius: 8px; "
-        "background-color: #0a0a0a; }");
-    display_scene_ = new QGraphicsScene(display_view_);
-    display_view_->setScene(display_scene_);
-    pixmap_item_ = display_scene_->addPixmap(QPixmap());
-    display_scene_->setBackgroundBrush(QBrush(QColor("#0a0a0a")));
+    // -- 2x2 视频网格 --
+    QWidget* grid_widget = new QWidget(left_panel);
+    grid_layout_ = new QGridLayout(grid_widget);
+    grid_layout_->setContentsMargins(2, 2, 2, 2);
+    grid_layout_->setSpacing(4);
 
-    // FPS 叠加层（独立 widget 覆盖在 GraphicsView 上）
-    display_overlay_ = new QLabel("帧率: --", left_panel);
-    display_overlay_->setObjectName("overlayLabel");
-    display_overlay_->move(10, 10);
-    display_overlay_->adjustSize();
-    display_overlay_->raise();
+    const char* channel_names[] = {"通道1", "通道2", "通道3", "通道4"};
 
-    left_layout->addWidget(display_view_, 3);  // 检测窗口占 3 份
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        VideoCell& cell = video_cells_[i];
+
+        cell.container = new QWidget(grid_widget);
+        QVBoxLayout* cell_layout = new QVBoxLayout(cell.container);
+        cell_layout->setContentsMargins(0, 0, 0, 0);
+        cell_layout->setSpacing(0);
+
+        // 顶部标签栏
+        QWidget* top_bar = new QWidget(cell.container);
+        QHBoxLayout* top_layout = new QHBoxLayout(top_bar);
+        top_layout->setContentsMargins(6, 2, 6, 2);
+        top_layout->setSpacing(4);
+
+        cell.channel_label = new QLabel(channel_names[i], top_bar);
+        cell.channel_label->setStyleSheet("color: #5dade2; font-weight: bold; font-size: 12px;");
+        cell.overlay = new QLabel("FPS: --", top_bar);
+        cell.overlay->setStyleSheet("color: #2ecc71; font-size: 11px;");
+
+        cell.zoom_in_btn = new QPushButton("放大", top_bar);
+        cell.zoom_in_btn->setFixedSize(40, 20);
+        cell.zoom_in_btn->setStyleSheet(
+            "QPushButton { background-color: #1a5276; color: white; border: none; border-radius: 3px; font-size: 10px; }"
+            "QPushButton:hover { background-color: #2980b9; }");
+        cell.zoom_out_btn = new QPushButton("缩小", top_bar);
+        cell.zoom_out_btn->setFixedSize(40, 20);
+        cell.zoom_out_btn->setStyleSheet(
+            "QPushButton { background-color: #922b21; color: white; border: none; border-radius: 3px; font-size: 10px; }"
+            "QPushButton:hover { background-color: #c0392b; }");
+        cell.zoom_out_btn->hide();
+
+        top_layout->addWidget(cell.channel_label);
+        top_layout->addWidget(cell.overlay);
+        top_layout->addStretch();
+        top_layout->addWidget(cell.zoom_in_btn);
+        top_layout->addWidget(cell.zoom_out_btn);
+
+        // GraphicsView
+        cell.view = new QGraphicsView(cell.container);
+        cell.view->setRenderHint(QPainter::Antialiasing);
+        cell.view->setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
+        cell.view->setStyleSheet(
+            "QGraphicsView { border: 1px solid #3a3a3a; border-radius: 4px; background-color: #0a0a0a; }");
+        cell.scene = new QGraphicsScene(cell.view);
+        cell.view->setScene(cell.scene);
+        cell.pixmap_item = cell.scene->addPixmap(QPixmap());
+        cell.scene->setBackgroundBrush(QBrush(QColor("#0a0a0a")));
+
+        cell_layout->addWidget(top_bar);
+        cell_layout->addWidget(cell.view, 1);
+
+        grid_layout_->addWidget(cell.container, i / 2, i % 2);
+
+        int ch = i;
+        connect(cell.zoom_in_btn, &QPushButton::clicked, this, [this, ch]() { onZoomIn(ch); });
+        connect(cell.zoom_out_btn, &QPushButton::clicked, this, &MainWindow::onZoomOut);
+    }
+
+    left_layout->addWidget(grid_widget, 3);
 
     // -- 控制区 (底部) --
     QFrame* control_frame = new QFrame(left_panel);
     control_frame->setFrameStyle(QFrame::StyledPanel);
     QVBoxLayout* ctrl_layout = new QVBoxLayout(control_frame);
     ctrl_layout->setContentsMargins(8, 8, 8, 8);
-    ctrl_layout->setSpacing(6);
+    ctrl_layout->setSpacing(4);
 
     // 模型行
     QHBoxLayout* model_row = new QHBoxLayout();
@@ -559,18 +263,23 @@ void MainWindow::setupUI() {
     model_row->addWidget(model_status_left_label_);
     ctrl_layout->addLayout(model_row);
 
-    // 视频行
-    QHBoxLayout* video_row = new QHBoxLayout();
-    video_row->setSpacing(4);
-    video_edit_ = new QLineEdit(left_panel);
-    video_edit_->setPlaceholderText("视频文件路径或摄像头ID（如 0）");
-    video_btn_ = new QPushButton("浏览", left_panel);
-    video_btn_->setMaximumWidth(70);
+    // 4路视频源行
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        QHBoxLayout* video_row = new QHBoxLayout();
+        video_row->setSpacing(4);
+        video_edits_[i] = new QLineEdit(left_panel);
+        video_edits_[i]->setPlaceholderText(QString("通道%1: 视频路径或摄像头ID").arg(i + 1));
+        video_btns_[i] = new QPushButton("浏览", left_panel);
+        video_btns_[i]->setMaximumWidth(70);
 
-    video_row->addWidget(new QLabel("来源:", left_panel));
-    video_row->addWidget(video_edit_, 1);
-    video_row->addWidget(video_btn_);
-    ctrl_layout->addLayout(video_row);
+        video_row->addWidget(new QLabel(QString("路%1:").arg(i + 1), left_panel));
+        video_row->addWidget(video_edits_[i], 1);
+        video_row->addWidget(video_btns_[i]);
+        ctrl_layout->addLayout(video_row);
+
+        int ch = i;
+        connect(video_btns_[i], &QPushButton::clicked, this, [this, ch]() { onBrowseVideo(ch); });
+    }
 
     // 按钮行
     QHBoxLayout* btn_row = new QHBoxLayout();
@@ -587,9 +296,6 @@ void MainWindow::setupUI() {
     step_btn_->setEnabled(false);
     screenshot_btn_ = new QPushButton("截图", left_panel);
     screenshot_btn_->setEnabled(false);
-    record_btn_ = new QPushButton("录制", left_panel);
-    record_btn_->setEnabled(false);
-    record_btn_->setObjectName("stopBtn");
     export_btn_ = new QPushButton("导出结果", left_panel);
     export_btn_->setEnabled(false);
 
@@ -602,7 +308,6 @@ void MainWindow::setupUI() {
     btn_row->addWidget(pause_btn_);
     btn_row->addWidget(step_btn_);
     btn_row->addWidget(screenshot_btn_);
-    btn_row->addWidget(record_btn_);
     btn_row->addWidget(export_btn_);
     btn_row->addStretch();
     btn_row->addWidget(new QLabel("线程数:", left_panel));
@@ -633,116 +338,82 @@ void MainWindow::setupUI() {
     thr_row->addWidget(nms_value_label_);
     ctrl_layout->addLayout(thr_row);
 
-    // ROI 行
-    QHBoxLayout* roi_row = new QHBoxLayout();
-    roi_row->setSpacing(6);
-    roi_btn_ = new QPushButton("框选区域", left_panel);
-    roi_btn_->setToolTip("在画面上拖拽框选检测区域");
-    roi_clear_btn_ = new QPushButton("清除区域", left_panel);
-    roi_clear_btn_->setEnabled(false);
-    roi_status_label_ = new QLabel("全画面", left_panel);
-    roi_status_label_->setStyleSheet("color: #8a9bb0; font-size: 12px;");
-    roi_row->addWidget(roi_btn_);
-    roi_row->addWidget(roi_clear_btn_);
-    roi_row->addWidget(roi_status_label_);
-    roi_row->addStretch();
-    ctrl_layout->addLayout(roi_row);
-
-    left_layout->addWidget(control_frame, 0);  // 控制区不伸缩
+    left_layout->addWidget(control_frame, 0);
 
     main_splitter->addWidget(left_panel);
 
     // =============================================
-    // 右侧面板：状态 + 摄像头列表 + 日志
+    // 右侧面板：状态 + 日志
     // =============================================
     QWidget* right_panel = new QWidget();
     QVBoxLayout* right_layout = new QVBoxLayout(right_panel);
     right_layout->setContentsMargins(0, 0, 0, 0);
     right_layout->setSpacing(6);
 
-    // -- 右侧上半部分：状态信息 + 摄像头列表 --
-    QSplitter* right_top_splitter = new QSplitter(Qt::Vertical, right_panel);
-    right_top_splitter->setHandleWidth(3);
-
     // 状态信息组
-    QGroupBox* status_group = new QGroupBox("状态信息", right_panel);
+    QGroupBox* status_group = new QGroupBox("通道状态", right_panel);
     QGridLayout* status_grid = new QGridLayout(status_group);
-    status_grid->setSpacing(6);
+    status_grid->setSpacing(4);
     status_grid->setContentsMargins(10, 16, 10, 10);
 
-    auto makeStatusLabel = [](const QString& text) -> QLabel* {
-        QLabel* lbl = new QLabel(text);
-        lbl->setObjectName("statusHeader");
-        return lbl;
-    };
-    auto makeStatusValue = [](const QString& text) -> QLabel* {
-        QLabel* lbl = new QLabel(text);
-        lbl->setObjectName("statusValue");
-        return lbl;
-    };
+    status_grid->addWidget(new QLabel(""), 0, 0);
+    status_grid->addWidget(new QLabel("FPS"), 0, 1, Qt::AlignCenter);
+    status_grid->addWidget(new QLabel("帧数"), 0, 2, Qt::AlignCenter);
 
-    model_name_label_ = makeStatusValue("--");
-    model_status_label_ = makeStatusValue("未加载");
-    fps_label_ = makeStatusValue("--");
-    resolution_label_ = makeStatusValue("--");
-    frames_label_ = makeStatusValue("0");
-    infer_time_label_ = makeStatusValue("--");
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        QLabel* ch_label = new QLabel(QString("通道%1").arg(i + 1));
+        ch_label->setStyleSheet("color: #5dade2; font-weight: bold;");
+        fps_labels_[i] = new QLabel("--");
+        fps_labels_[i]->setObjectName("statusValue");
+        fps_labels_[i]->setAlignment(Qt::AlignCenter);
+        frames_labels_[i] = new QLabel("0");
+        frames_labels_[i]->setObjectName("statusValue");
+        frames_labels_[i]->setAlignment(Qt::AlignCenter);
+        infer_time_labels_[i] = new QLabel("--");
+        infer_time_labels_[i]->setObjectName("statusValue");
+        infer_time_labels_[i]->setAlignment(Qt::AlignCenter);
+
+        status_grid->addWidget(ch_label, i + 1, 0);
+        status_grid->addWidget(fps_labels_[i], i + 1, 1);
+        status_grid->addWidget(frames_labels_[i], i + 1, 2);
+    }
+
+    // NPU 使用率
+    QLabel* npu_label = new QLabel("NPU 使用率:");
+    npu_label->setObjectName("statusHeader");
     npu_usage_bar_ = new QProgressBar(right_panel);
     npu_usage_bar_->setRange(0, 100);
     npu_usage_bar_->setValue(0);
-    npu_usage_bar_->setFormat("NPU: %p%");
+    npu_usage_bar_->setMinimumHeight(20);
 
-    status_grid->addWidget(makeStatusLabel("模型:"), 0, 0);
-    status_grid->addWidget(model_name_label_, 0, 1);
-    status_grid->addWidget(makeStatusLabel("状态:"), 0, 2);
-    status_grid->addWidget(model_status_label_, 0, 3);
+    QHBoxLayout* npu_row = new QHBoxLayout();
+    npu_row->addWidget(npu_label);
+    npu_row->addWidget(npu_usage_bar_, 1);
+    status_grid->addLayout(npu_row, MAX_CHANNELS + 1, 0, 1, 3);
 
-    status_grid->addWidget(makeStatusLabel("帧率:"), 1, 0);
-    status_grid->addWidget(fps_label_, 1, 1);
-    status_grid->addWidget(makeStatusLabel("分辨率:"), 1, 2);
-    status_grid->addWidget(resolution_label_, 1, 3);
+    model_name_label_ = new QLabel("--");
+    model_name_label_->setObjectName("statusValue");
+    model_status_label_ = new QLabel("未加载");
+    model_status_label_->setObjectName("statusValue");
 
-    status_grid->addWidget(makeStatusLabel("帧数:"), 2, 0);
-    status_grid->addWidget(frames_label_, 2, 1);
-    status_grid->addWidget(makeStatusLabel("推理耗时:"), 2, 2);
-    status_grid->addWidget(infer_time_label_, 2, 3);
+    status_grid->addWidget(new QLabel("模型:"), MAX_CHANNELS + 2, 0);
+    status_grid->addWidget(model_name_label_, MAX_CHANNELS + 2, 1, 1, 2);
+    status_grid->addWidget(new QLabel("状态:"), MAX_CHANNELS + 3, 0);
+    status_grid->addWidget(model_status_label_, MAX_CHANNELS + 3, 1, 1, 2);
 
-    status_grid->addWidget(npu_usage_bar_, 3, 0, 1, 4);
+    right_layout->addWidget(status_group, 0);
 
-    ws_status_label_ = makeStatusValue("未启动");
-    ws_clients_label_ = makeStatusValue("0");
+    // WebSocket 状态
+    QGroupBox* ws_group = new QGroupBox("WebSocket", right_panel);
+    QVBoxLayout* ws_layout = new QVBoxLayout(ws_group);
+    ws_layout->setContentsMargins(10, 16, 10, 10);
+    ws_status_label_ = new QLabel("未启动", ws_group);
+    ws_clients_label_ = new QLabel("客户端: 0", ws_group);
+    ws_layout->addWidget(ws_status_label_);
+    ws_layout->addWidget(ws_clients_label_);
+    right_layout->addWidget(ws_group, 0);
 
-    status_grid->addWidget(makeStatusLabel("WebSocket:"), 4, 0);
-    status_grid->addWidget(ws_status_label_, 4, 1);
-    status_grid->addWidget(makeStatusLabel("客户端数:"), 4, 2);
-    status_grid->addWidget(ws_clients_label_, 4, 3);
-
-    right_top_splitter->addWidget(status_group);
-
-    // 摄像头列表组
-    QGroupBox* camera_group = new QGroupBox("摄像头", right_panel);
-    QVBoxLayout* cam_layout = new QVBoxLayout(camera_group);
-    cam_layout->setContentsMargins(10, 16, 10, 10);
-
-    QHBoxLayout* cam_header = new QHBoxLayout();
-    camera_combo_ = new QComboBox(right_panel);
-    refresh_cam_btn_ = new QPushButton("刷新", right_panel);
-    refresh_cam_btn_->setMaximumWidth(70);
-    cam_header->addWidget(camera_combo_, 1);
-    cam_header->addWidget(refresh_cam_btn_);
-    cam_layout->addLayout(cam_header);
-
-    camera_list_ = new QListWidget(right_panel);
-    camera_list_->setMinimumHeight(60);
-    cam_layout->addWidget(camera_list_, 1);
-
-    right_top_splitter->addWidget(camera_group);
-    right_top_splitter->setStretchFactor(0, 2);  // 状态信息占 2 份
-    right_top_splitter->setStretchFactor(1, 1);  // 摄像头列表占 1 份
-
-    right_layout->addWidget(right_top_splitter, 1);
-
-    // -- 右侧下半部分：日志 --
+    // 日志
     QGroupBox* log_group = new QGroupBox("运行日志", right_panel);
     QVBoxLayout* log_layout = new QVBoxLayout(log_group);
     log_layout->setContentsMargins(10, 16, 10, 10);
@@ -758,123 +429,230 @@ void MainWindow::setupUI() {
     log_edit_->setReadOnly(true);
     log_layout->addWidget(log_edit_, 1);
 
-    right_layout->addWidget(log_group, 1);  // 日志区占 1 份
+    right_layout->addWidget(log_group, 1);
 
     main_splitter->addWidget(right_panel);
 
-    // 设置左右分割比例 (2:1)
-    main_splitter->setStretchFactor(0, 2);
+    main_splitter->setStretchFactor(0, 3);
     main_splitter->setStretchFactor(1, 1);
-    main_splitter->setSizes({850, 430});
+    main_splitter->setSizes({1200, 400});
 
-    // 主布局
     QVBoxLayout* main_layout = new QVBoxLayout(central);
     main_layout->setContentsMargins(4, 4, 4, 4);
     main_layout->addWidget(main_splitter);
 
-    // =============================================
     // 状态栏
-    // =============================================
     status_label_ = new QLabel("就绪", this);
     statusBar()->addWidget(status_label_, 1);
-    statusBar()->addPermanentWidget(new QLabel("RK3588 YOLO 目标检测", this));
+    statusBar()->addPermanentWidget(new QLabel("RK3588 YOLO 四路检测", this));
 
-    // =============================================
     // 信号槽连接
-    // =============================================
     connect(model_btn_, &QPushButton::clicked, this, &MainWindow::onBrowseModel);
     connect(load_btn_, &QPushButton::clicked, this, &MainWindow::onLoadModel);
-    connect(video_btn_, &QPushButton::clicked, this, &MainWindow::onBrowseVideo);
     connect(start_btn_, &QPushButton::clicked, this, &MainWindow::onStartDetection);
     connect(stop_btn_, &QPushButton::clicked, this, &MainWindow::onStopDetection);
-    connect(conf_slider_, &QSlider::valueChanged, this, &MainWindow::onConfThresholdChanged);
-    connect(nms_slider_, &QSlider::valueChanged, this, &MainWindow::onNmsThresholdChanged);
-    connect(clear_log_btn_, &QPushButton::clicked, this, &MainWindow::onClearLog);
-    connect(refresh_cam_btn_, &QPushButton::clicked, this, &MainWindow::onRefreshCameras);
-    connect(camera_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &MainWindow::onCameraSelected);
     connect(pause_btn_, &QPushButton::clicked, this, &MainWindow::onPauseToggle);
     connect(step_btn_, &QPushButton::clicked, this, &MainWindow::onStepFrame);
     connect(screenshot_btn_, &QPushButton::clicked, this, &MainWindow::onScreenshot);
-    connect(record_btn_, &QPushButton::clicked, this, &MainWindow::onRecordToggle);
     connect(export_btn_, &QPushButton::clicked, this, &MainWindow::onExportResults);
-    connect(roi_btn_, &QPushButton::clicked, this, &MainWindow::onRoiToggle);
-    connect(roi_clear_btn_, &QPushButton::clicked, this, &MainWindow::onRoiClear);
-
-    // =============================================
-    // 快捷键
-    // =============================================
-    auto* sc_space = new QShortcut(QKeySequence(Qt::Key_Space), this);
-    connect(sc_space, &QShortcut::activated, this, [this]() {
-        if (pause_btn_->isEnabled()) onPauseToggle();
-    });
-    auto* sc_s = new QShortcut(QKeySequence(Qt::Key_S), this);
-    connect(sc_s, &QShortcut::activated, this, [this]() {
-        if (screenshot_btn_->isEnabled()) onScreenshot();
-    });
-    auto* sc_r = new QShortcut(QKeySequence(Qt::Key_R), this);
-    connect(sc_r, &QShortcut::activated, this, [this]() {
-        if (record_btn_->isEnabled()) onRecordToggle();
-    });
-    auto* sc_esc = new QShortcut(QKeySequence(Qt::Key_Escape), this);
-    connect(sc_esc, &QShortcut::activated, this, [this]() {
-        if (stop_btn_->isEnabled()) onStopDetection();
-    });
-    auto* sc_f11 = new QShortcut(QKeySequence(Qt::Key_F11), this);
-    connect(sc_f11, &QShortcut::activated, this, [this]() {
-        if (isFullScreen()) showNormal();
-        else showFullScreen();
-    });
+    connect(conf_slider_, &QSlider::valueChanged, this, &MainWindow::onConfThresholdChanged);
+    connect(nms_slider_, &QSlider::valueChanged, this, &MainWindow::onNmsThresholdChanged);
+    connect(clear_log_btn_, &QPushButton::clicked, this, &MainWindow::onClearLog);
 }
 
 // ============================================================
-// 摄像头检测
+// 样式表
 // ============================================================
-void MainWindow::detectCameras() {
-    camera_combo_->clear();
-    camera_list_->clear();
-
-    for (int i = 0; i < 10; i++) {
-        cv::VideoCapture cap(i);
-        if (cap.isOpened()) {
-            int w = (int)cap.get(cv::CAP_PROP_FRAME_WIDTH);
-            int h = (int)cap.get(cv::CAP_PROP_FRAME_HEIGHT);
-            QString info = QString("摄像头 %1 (%2x%3)").arg(i).arg(w).arg(h);
-            camera_combo_->addItem(info, i);
-            camera_list_->addItem(info);
-            cap.release();
+void MainWindow::setupStyle() {
+    qApp->setStyleSheet(R"(
+        QMainWindow, QWidget {
+            font-family: "Segoe UI", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
+            font-size: 13px;
+            color: #e8e8e8;
+            background-color: #0a0a0a;
         }
-    }
-
-    if (camera_combo_->count() == 0) {
-        camera_combo_->addItem("-- 未检测到摄像头 --", -1);
-        camera_list_->addItem("未检测到摄像头");
-    } else {
-        camera_combo_->insertItem(0, "-- 选择摄像头 --", -1);
-        camera_combo_->setCurrentIndex(0);
-    }
-
-    log("system", QString("检测到 %1 个摄像头。").arg(camera_combo_->count()));
+        QGroupBox {
+            font-weight: bold;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            margin-top: 14px;
+            padding: 14px 10px 10px 10px;
+            background-color: #1a1a1a;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 8px;
+            color: #5dade2;
+        }
+        QLineEdit {
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            padding: 6px 10px;
+            background-color: #141414;
+            color: #f5f5f5;
+            selection-background-color: #1a5276;
+            font-size: 13px;
+        }
+        QLineEdit:focus {
+            border: 1px solid #3498db;
+            background-color: #1a1a1a;
+        }
+        QLineEdit:disabled {
+            background-color: #1a1a1a;
+            color: #555555;
+        }
+        QPushButton {
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            padding: 7px 16px;
+            background-color: #252525;
+            color: #f0f0f0;
+            min-height: 26px;
+            font-size: 13px;
+        }
+        QPushButton:hover {
+            background-color: #333333;
+            border: 1px solid #4a4a4a;
+            color: #ffffff;
+        }
+        QPushButton:pressed {
+            background-color: #1a1a1a;
+        }
+        QPushButton:disabled {
+            background-color: #1a1a1a;
+            color: #444444;
+        }
+        QPushButton#startBtn {
+            background-color: #1a5276;
+            border-color: #2980b9;
+            color: #ffffff;
+            font-weight: bold;
+        }
+        QPushButton#startBtn:hover {
+            background-color: #2980b9;
+        }
+        QPushButton#startBtn:disabled {
+            background-color: #1a1a1a;
+            color: #444444;
+        }
+        QPushButton#stopBtn {
+            background-color: #922b21;
+            border-color: #c0392b;
+            color: #ffffff;
+            font-weight: bold;
+        }
+        QPushButton#stopBtn:hover {
+            background-color: #c0392b;
+        }
+        QPushButton#stopBtn:disabled {
+            background-color: #1a1a1a;
+            color: #444444;
+        }
+        QSlider::groove:horizontal {
+            border: none;
+            height: 6px;
+            background: #333333;
+            border-radius: 3px;
+        }
+        QSlider::handle:horizontal {
+            background: #3498db;
+            border: none;
+            width: 16px;
+            height: 16px;
+            margin: -5px 0;
+            border-radius: 8px;
+        }
+        QSlider::handle:horizontal:hover {
+            background: #5dade2;
+        }
+        QSlider::sub-page:horizontal {
+            background: #3498db;
+            border-radius: 3px;
+        }
+        QSpinBox {
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            padding: 5px 8px;
+            background-color: #141414;
+            color: #f5f5f5;
+            min-height: 26px;
+        }
+        QTextEdit {
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            background-color: #0f0f0f;
+            color: #e0e0e0;
+            font-family: "Cascadia Code", "Consolas", monospace;
+            font-size: 12px;
+            padding: 6px;
+        }
+        QProgressBar {
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            background-color: #141414;
+            text-align: center;
+            color: #e8e8e8;
+            min-height: 20px;
+            font-size: 12px;
+        }
+        QProgressBar::chunk {
+            background-color: #1a5276;
+            border-radius: 3px;
+        }
+        QStatusBar {
+            background-color: #1a1a1a;
+            color: #e8e8e8;
+            font-size: 12px;
+            border-top: 1px solid #3a3a3a;
+        }
+        QSplitter::handle {
+            background-color: #2a2a2a;
+        }
+        QSplitter::handle:horizontal {
+            width: 3px;
+        }
+        QLabel {
+            color: #e0e0e0;
+        }
+        QLabel#statusValue {
+            color: #2ecc71;
+            font-weight: bold;
+            font-size: 13px;
+        }
+        QLabel#statusHeader {
+            color: #95a5a6;
+            font-size: 12px;
+        }
+        QScrollBar:vertical {
+            background-color: #141414;
+            width: 10px;
+            margin: 0;
+        }
+        QScrollBar::handle:vertical {
+            background-color: #444444;
+            min-height: 30px;
+            border-radius: 5px;
+        }
+        QScrollBar::handle:vertical:hover {
+            background-color: #555555;
+        }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+            height: 0px;
+        }
+    )");
 }
 
 // ============================================================
-// 辅助方法
+// 辅助函数
 // ============================================================
-void MainWindow::log(const QString& category, const QString& message) {
-    QString ts = currentTimestamp();
-    QString line = QString("<span style='color:#6a7a8a'>[%1]</span> "
-                           "<span style='color:#7ab8f5'>[%2]</span> %3")
-                       .arg(ts, category, message);
-    log_edit_->append(line);
-
-    // 自动滚动到底部
-    QTextCursor cursor = log_edit_->textCursor();
-    cursor.movePosition(QTextCursor::End);
-    log_edit_->setTextCursor(cursor);
-}
 
 QString MainWindow::currentTimestamp() {
-    return QDateTime::currentDateTime().toString("hh:mm:ss");
+    return QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+}
+
+void MainWindow::log(const QString& category, const QString& message) {
+    log_edit_->append(QString("[%1][%2] %3").arg(currentTimestamp(), category, message));
 }
 
 void MainWindow::updateThresholdLabels() {
@@ -882,53 +660,46 @@ void MainWindow::updateThresholdLabels() {
     nms_value_label_->setText(QString::number(nms_threshold_, 'f', 2));
 }
 
-void MainWindow::enableControls(bool enabled) {
-    start_btn_->setEnabled(!enabled);
-    stop_btn_->setEnabled(enabled);
-    pause_btn_->setEnabled(enabled);
-    step_btn_->setEnabled(enabled);
-    screenshot_btn_->setEnabled(enabled);
-    record_btn_->setEnabled(enabled);
-    export_btn_->setEnabled(enabled);
-    model_edit_->setEnabled(!enabled);
-    video_edit_->setEnabled(!enabled);
-    model_btn_->setEnabled(!enabled);
-    video_btn_->setEnabled(!enabled);
-    load_btn_->setEnabled(!enabled);
-    thread_spin_->setEnabled(!enabled);
-    if (!enabled) {
-        pause_btn_->setText("暂停");
-        if (recording_) {
-            onRecordToggle();
-        }
-    }
+void MainWindow::enableControls(bool running) {
+    start_btn_->setEnabled(!running);
+    stop_btn_->setEnabled(running);
+    pause_btn_->setEnabled(running);
+    step_btn_->setEnabled(running);
+    screenshot_btn_->setEnabled(running);
+    export_btn_->setEnabled(!running);
+    model_btn_->setEnabled(!running);
+    load_btn_->setEnabled(!running);
+    for (int i = 0; i < MAX_CHANNELS; i++)
+        video_btns_[i]->setEnabled(!running);
+    thread_spin_->setEnabled(!running);
 }
 
 QString MainWindow::formatSize(qint64 bytes) {
     if (bytes < 1024) return QString("%1 B").arg(bytes);
     if (bytes < 1024 * 1024) return QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024) return QString("%1 MB").arg(bytes / (1024.0 * 1024), 0, 'f', 1);
-    return QString("%1 GB").arg(bytes / (1024.0 * 1024 * 1024), 0, 'f', 2);
+    return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
 }
 
 void MainWindow::saveSettings() {
-    QSettings s("YOLO Detection", "RK3588");
-    s.setValue("geometry", saveGeometry());
+    QSettings s("RK3588", "YOLO_Detector");
     s.setValue("model_path", model_edit_->text());
-    s.setValue("video_path", video_edit_->text());
+    for (int i = 0; i < MAX_CHANNELS; i++)
+        s.setValue(QString("video_path_%1").arg(i), video_edits_[i]->text());
     s.setValue("thread_num", thread_spin_->value());
     s.setValue("conf_threshold", conf_threshold_);
     s.setValue("nms_threshold", nms_threshold_);
+    s.setValue("geometry", saveGeometry());
 }
 
 void MainWindow::restoreSettings() {
-    QSettings s("YOLO Detection", "RK3588");
-    if (s.contains("geometry"))
-        restoreGeometry(s.value("geometry").toByteArray());
+    QSettings s("RK3588", "YOLO_Detector");
     if (s.contains("model_path"))
         model_edit_->setText(s.value("model_path").toString());
-    if (s.contains("video_path"))
-        video_edit_->setText(s.value("video_path").toString());
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        QString key = QString("video_path_%1").arg(i);
+        if (s.contains(key))
+            video_edits_[i]->setText(s.value(key).toString());
+    }
     if (s.contains("thread_num"))
         thread_spin_->setValue(s.value("thread_num", 3).toInt());
     if (s.contains("conf_threshold")) {
@@ -939,6 +710,8 @@ void MainWindow::restoreSettings() {
         nms_threshold_ = s.value("nms_threshold", 0.45f).toFloat();
         nms_slider_->setValue((int)(nms_threshold_ * 100));
     }
+    if (s.contains("geometry"))
+        restoreGeometry(s.value("geometry").toByteArray());
 }
 
 // ============================================================
@@ -970,33 +743,20 @@ void MainWindow::onLoadModel() {
     fclose(f);
 
     QFileInfo fi(QString::fromStdString(model_path_));
-
     model_status_label_->setText("已选择");
     model_status_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
     model_status_left_label_->setText("已选择");
     model_status_left_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
     model_name_label_->setText(fi.fileName());
     start_btn_->setEnabled(true);
-    status_label_->setText("模型已选择：" + fi.fileName());
     log("model", QString("已选择：%1 (%2)").arg(fi.fileName(), formatSize(size)));
 }
 
-void MainWindow::onBrowseVideo() {
-    QString p = QFileDialog::getOpenFileName(this, "打开视频", "", "视频文件 (*.mp4 *.avi *.mkv *.mov);;所有文件 (*.*)");
-    if (!p.isEmpty()) video_edit_->setText(p);
-}
-
-void MainWindow::onRefreshCameras() {
-    detectCameras();
-}
-
-void MainWindow::onCameraSelected(int index) {
-    if (index >= 0) {
-        int cam_id = camera_combo_->itemData(index).toInt();
-        if (cam_id >= 0) {
-            video_edit_->setText(QString::number(cam_id));
-        }
-    }
+void MainWindow::onBrowseVideo(int ch) {
+    if (ch < 0 || ch >= MAX_CHANNELS) return;
+    QString p = QFileDialog::getOpenFileName(this, QString("选择通道%1视频").arg(ch + 1),
+        "", "视频文件 (*.mp4 *.avi *.mkv *.mov);;所有文件 (*.*)");
+    if (!p.isEmpty()) video_edits_[ch]->setText(p);
 }
 
 void MainWindow::onStartDetection() {
@@ -1005,134 +765,139 @@ void MainWindow::onStartDetection() {
         return;
     }
 
-    video_path_ = video_edit_->text().toStdString();
-    if (video_path_.empty()) {
-        QMessageBox::warning(this, "错误", "请选择视频文件或输入摄像头ID。");
+    // 收集有效的视频源
+    int active_count = 0;
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (!video_edits_[i]->text().trimmed().isEmpty())
+            active_count++;
+    }
+
+    if (active_count == 0) {
+        QMessageBox::warning(this, "错误", "请至少输入一个视频源。");
         return;
     }
 
     int thread_num = thread_spin_->value();
-
     export_records_.clear();
-    detect_thread_ = new DetectThread(model_path_, video_path_, thread_num, conf_threshold_, nms_threshold_);
-    detect_thread_->setWebSocket(ws_server_.get());
-    if (!roi_rect_.isNull()) {
-        detect_thread_->setRoi(roi_rect_);
+
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        QString video_text = video_edits_[i]->text().trimmed();
+        if (video_text.isEmpty()) continue;
+
+        std::string video_path = video_text.toStdString();
+        detect_threads_[i] = new DetectThread(i, model_path_, video_path, thread_num, conf_threshold_, nms_threshold_);
+        detect_threads_[i]->setWebSocket(ws_server_.get());
+
+        int ch = i;
+        connect(detect_threads_[i], &DetectThread::frameReady, this,
+            [this, ch](const QImage& img, double fps) { onFrameReady(ch, img, fps); });
+        connect(detect_threads_[i], &DetectThread::statsUpdated, this,
+            [this, ch](int frames, double fps, double inferTime) { onStatsUpdated(ch, frames, fps, inferTime); });
+        connect(detect_threads_[i], &DetectThread::finished, this,
+            [this, ch]() { onDetectFinished(ch); });
+        connect(detect_threads_[i], &DetectThread::error, this,
+            [this, ch](const QString& msg) { onDetectError(ch, msg); });
+        connect(detect_threads_[i], &DetectThread::detectionResult, this,
+            [this, ch](int frameId, const QString &cls, float conf, int l, int t, int r, int b) {
+                export_records_.push_back({ch, frameId, cls.toStdString(), conf, l, t, r, b});
+            });
+
+        detect_threads_[i]->start();
+        log("system", QString("通道%1 检测开始。来源：%2").arg(i + 1).arg(video_edits_[i]->text()));
     }
-    connect(detect_thread_, &DetectThread::frameReady, this, &MainWindow::onFrameReady);
-    connect(detect_thread_, &DetectThread::statsUpdated, this, &MainWindow::onStatsUpdated);
-    connect(detect_thread_, &DetectThread::finished, this, &MainWindow::onDetectFinished);
-    connect(detect_thread_, &DetectThread::error, this, &MainWindow::onDetectError);
-    connect(detect_thread_, &DetectThread::detectionResult, this, [this](int frameId, const QString &cls, float conf, int l, int t, int r, int b) {
-        export_records_.push_back({frameId, cls.toStdString(), conf, l, t, r, b});
-    });
 
     enableControls(true);
     model_status_label_->setText("运行中");
     model_status_label_->setStyleSheet("color: #ffb74d; font-weight: bold;");
-    frames_label_->setText("0");
-    infer_time_label_->setText("--");
-
-    detect_thread_->start();
-    log("system", QString("检测开始。来源：%1，线程数：%2，置信度：%3，NMS：%4")
-                       .arg(QString::fromStdString(video_path_)).arg(thread_num)
-                       .arg(conf_threshold_, 0, 'f', 2).arg(nms_threshold_, 0, 'f', 2));
-    status_label_->setText("检测中...");
+    model_status_left_label_->setText("运行中");
+    model_status_left_label_->setStyleSheet("color: #ffb74d; font-weight: bold;");
+    status_label_->setText(QString("检测中... %1 路").arg(active_count));
 }
 
 void MainWindow::onStopDetection() {
-    if (detect_thread_) {
-        detect_thread_->stop();
-        log("system", "正在停止检测...");
-        status_label_->setText("停止中...");
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (detect_threads_[i]) {
+            detect_threads_[i]->stop();
+        }
     }
+    log("system", "正在停止所有检测...");
+    status_label_->setText("停止中...");
 }
 
-void MainWindow::onFrameReady(const QImage& image, double fps) {
-    last_frame_ = image;
+void MainWindow::onFrameReady(int ch, const QImage& image, double fps) {
+    if (ch < 0 || ch >= MAX_CHANNELS) return;
+    last_frames_[ch] = image;
+
+    VideoCell& cell = video_cells_[ch];
     QPixmap pix = QPixmap::fromImage(image);
-    pixmap_item_->setPixmap(pix);
-    display_scene_->setSceneRect(pix.rect());
-    display_view_->fitInView(pixmap_item_, Qt::KeepAspectRatio);
+    cell.pixmap_item->setPixmap(pix);
+    cell.scene->setSceneRect(pix.rect());
+    cell.view->fitInView(cell.pixmap_item, Qt::KeepAspectRatio);
 
-    // 更新叠加层位置
-    display_overlay_->setText(QString("帧率: %1").arg(fps, 0, 'f', 1));
-    display_overlay_->adjustSize();
-    display_overlay_->move(10, 10);
-    display_overlay_->raise();
-
-    // 更新分辨率
-    resolution_label_->setText(QString("%1x%2").arg(image.width()).arg(image.height()));
-
-    // 录制时写入帧
-    if (recording_ && video_writer_ && video_writer_->isOpened()) {
-        cv::Mat bgr;
-        cv::cvtColor(cv::Mat(image.height(), image.width(), CV_8UC3,
-                             (void*)image.constBits()), bgr, cv::COLOR_RGB2BGR);
-        video_writer_->write(bgr);
-    }
+    cell.overlay->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
+    cell.last_fps = fps;
 }
 
-void MainWindow::onStatsUpdated(int frames, double fps, double inferTime) {
-    fps_label_->setText(QString("%1").arg(fps, 0, 'f', 1));
-    frames_label_->setText(QString::number(frames));
-    if (inferTime > 0) {
-        infer_time_label_->setText(QString("%1 ms").arg(inferTime, 0, 'f', 1));
-    }
+void MainWindow::onStatsUpdated(int ch, int frames, double fps, double inferTime) {
+    if (ch < 0 || ch >= MAX_CHANNELS) return;
+    fps_labels_[ch]->setText(QString::number(fps, 'f', 1));
+    frames_labels_[ch]->setText(QString::number(frames));
 
-    // 从 sysfs 读取真实 NPU 使用率
-    // 格式: "100@1000000000Hz" -> 取 @ 前的数字
     int usage = 0;
     FILE *fp = fopen("/sys/class/devfreq/fdab0000.npu/load", "r");
     if (fp) {
         char buf[64] = {0};
-        if (fgets(buf, sizeof(buf), fp)) {
-            usage = atoi(buf);
-            usage = qBound(0, usage, 100);
-        }
+        if (fgets(buf, sizeof(buf), fp))
+            usage = qBound(0, atoi(buf), 100);
         fclose(fp);
     }
     npu_usage_bar_->setValue(usage);
 }
 
-void MainWindow::onDetectFinished() {
-    enableControls(false);
-    if (detect_thread_) {
-        detect_thread_->wait();
-        detect_thread_->deleteLater();
-        detect_thread_ = nullptr;
+void MainWindow::onDetectFinished(int ch) {
+    if (ch < 0 || ch >= MAX_CHANNELS) return;
+    if (detect_threads_[ch]) {
+        detect_threads_[ch]->wait();
+        detect_threads_[ch]->deleteLater();
+        detect_threads_[ch] = nullptr;
     }
-    model_status_label_->setText("已完成");
-    model_status_label_->setStyleSheet("color: #8a9bb0; font-weight: bold;");
-    model_status_left_label_->setText("已选择");
-    model_status_left_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
-    status_label_->setText("检测完成。");
-    log("system", "检测完成。");
+
+    // 检查是否所有通道都完成了
+    bool all_done = true;
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (detect_threads_[i]) { all_done = false; break; }
+    }
+
+    if (all_done) {
+        enableControls(false);
+        model_status_label_->setText("已完成");
+        model_status_label_->setStyleSheet("color: #8a9bb0; font-weight: bold;");
+        model_status_left_label_->setText("已选择");
+        model_status_left_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
+        status_label_->setText("所有通道检测完成。");
+        log("system", "所有通道检测完成。");
+    } else {
+        log("system", QString("通道%1 检测完成。").arg(ch + 1));
+    }
 }
 
-void MainWindow::onDetectError(const QString& msg) {
+void MainWindow::onDetectError(int ch, const QString& msg) {
     log("info", msg);
-    if (msg.contains("finished")) {
-        // 正常结束信息，不弹窗
-    } else {
-        // 真正的错误，更新状态
-        model_status_label_->setText("加载失败");
-        model_status_label_->setStyleSheet("color: #e74c3c; font-weight: bold;");
-        model_status_left_label_->setText("加载失败");
-        model_status_left_label_->setStyleSheet("color: #e74c3c; font-weight: bold;");
-    }
 }
 
 void MainWindow::onConfThresholdChanged(int value) {
     conf_threshold_ = value / 100.0f;
     updateThresholdLabels();
-    log("system", QString("置信度阈值: %1").arg(conf_threshold_, 0, 'f', 2));
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (detect_threads_[i]) {
+            detect_threads_[i]->set_thread_num(thread_spin_->value());
+        }
+    }
 }
 
 void MainWindow::onNmsThresholdChanged(int value) {
     nms_threshold_ = value / 100.0f;
     updateThresholdLabels();
-    log("system", QString("NMS 阈值: %1").arg(nms_threshold_, 0, 'f', 2));
 }
 
 void MainWindow::onClearLog() {
@@ -1140,115 +905,98 @@ void MainWindow::onClearLog() {
 }
 
 void MainWindow::onPauseToggle() {
-    if (!detect_thread_) return;
-    if (detect_thread_->isPaused()) {
-        detect_thread_->resume();
-        pause_btn_->setText("暂停");
-        status_label_->setText("检测中...");
-        log("system", "检测已继续。");
-    } else {
-        detect_thread_->pause();
-        pause_btn_->setText("继续");
-        status_label_->setText("已暂停。");
-        log("system", "检测已暂停。");
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (!detect_threads_[i]) continue;
+        if (detect_threads_[i]->isPaused()) {
+            detect_threads_[i]->resume();
+            pause_btn_->setText("暂停");
+        } else {
+            detect_threads_[i]->pause();
+            pause_btn_->setText("继续");
+        }
+        break;
     }
 }
 
 void MainWindow::onStepFrame() {
-    if (!detect_thread_) return;
-    if (detect_thread_->isPaused()) {
-        detect_thread_->stepFrame();
-        log("system", "单帧步进。");
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (detect_threads_[i]) {
+            detect_threads_[i]->stepFrame();
+        }
     }
 }
 
-void MainWindow::onScreenshot() {
-    if (last_frame_.isNull()) {
-        QMessageBox::information(this, "提示", "当前没有可截图的帧。");
+void MainWindow::onExportResults() {
+    if (export_records_.empty()) {
+        QMessageBox::information(this, "导出", "没有检测结果可导出。");
         return;
     }
-    QString path = QFileDialog::getSaveFileName(this, "保存截图", "",
-                    "PNG 图片 (*.png);;JPEG 图片 (*.jpg);;所有文件 (*.*)");
-    if (!path.isEmpty()) {
-        if (last_frame_.save(path)) {
-            log("system", "截图已保存：" + path);
-        } else {
-            QMessageBox::warning(this, "错误", "截图保存失败。");
-        }
-    }
-}
 
-void MainWindow::onRecordToggle() {
-    if (!recording_) {
-        QString path = QFileDialog::getSaveFileName(this, "保存录制", "",
-                        "视频文件 (*.mp4 *.avi);;所有文件 (*.*)");
-        if (path.isEmpty()) return;
+    QString fileName = QFileDialog::getSaveFileName(this, "导出检测结果",
+        QString("detection_%1.json").arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss")),
+        "JSON (*.json);;CSV (*.csv)");
+    if (fileName.isEmpty()) return;
 
-        int w = last_frame_.isNull() ? 640 : last_frame_.width();
-        int h = last_frame_.isNull() ? 480 : last_frame_.height();
-        video_writer_ = std::make_unique<cv::VideoWriter>(
-            path.toStdString(), cv::VideoWriter::fourcc('m','p','4','v'), 25, cv::Size(w, h));
-        if (!video_writer_->isOpened()) {
-            QMessageBox::warning(this, "错误", "无法创建视频文件。");
-            return;
+    if (fileName.endsWith(".json")) {
+        QJsonArray arr;
+        for (const auto& rec : export_records_) {
+            QJsonObject obj;
+            obj["channel"] = rec.channel + 1;
+            obj["frame_id"] = rec.frame_id;
+            obj["class"] = QString::fromStdString(rec.class_name);
+            obj["confidence"] = rec.confidence;
+            obj["left"] = rec.left;
+            obj["top"] = rec.top;
+            obj["right"] = rec.right;
+            obj["bottom"] = rec.bottom;
+            arr.append(obj);
         }
-        recording_ = true;
-        record_btn_->setText("停止录制");
-        log("system", "开始录制：" + path);
+        QFile file(fileName);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(QJsonDocument(arr).toJson());
+            file.close();
+            log("system", QString("导出 %1 条检测结果到 %2").arg(export_records_.size()).arg(fileName));
+        }
     } else {
-        recording_ = false;
-        if (video_writer_) {
-            video_writer_->release();
-            video_writer_.reset();
+        QFile file(fileName);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream ts(&file);
+            ts << "channel,frame_id,class,confidence,left,top,right,bottom\n";
+            for (const auto& rec : export_records_) {
+                ts << QString("%1,%2,%3,%4,%5,%6,%7,%8\n")
+                      .arg(rec.channel + 1).arg(rec.frame_id)
+                      .arg(QString::fromStdString(rec.class_name))
+                      .arg(rec.confidence, 0, 'f', 4)
+                      .arg(rec.left).arg(rec.top).arg(rec.right).arg(rec.bottom);
+            }
+            file.close();
+            log("system", QString("导出 %1 条结果到 %2").arg(export_records_.size()).arg(fileName));
         }
-        record_btn_->setText("录制");
-        log("system", "录制已停止。");
     }
 }
 
 // ============================================================
-// WebSocket 槽函数
+// WebSocket 回调
 // ============================================================
 
 void MainWindow::onWebSocketStarted(quint16 port) {
-    // 获取本机实际 IP 地址
-    QString localIp = "127.0.0.1";
-    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
-        if (iface.flags().testFlag(QNetworkInterface::IsUp) &&
-            iface.flags().testFlag(QNetworkInterface::IsRunning) &&
-            !iface.flags().testFlag(QNetworkInterface::IsLoopBack)) {
-            for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
-                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
-                    localIp = entry.ip().toString();
-                    break;
-                }
-            }
-            if (localIp != "127.0.0.1") break;
-        }
-    }
-    QString wsUrl = QString("ws://%1:%2").arg(localIp).arg(port);
-    ws_status_label_->setText(wsUrl);
-    ws_status_label_->setStyleSheet("color: #2ecc71; font-weight: bold;");
-    log("websocket", QString("服务器已启动: %1").arg(wsUrl));
+    ws_status_label_->setText(QString("ws://0.0.0.0:%1").arg(port));
 }
 
 void MainWindow::onWebSocketClientConnected(QWebSocket *client) {
-    int count = ws_server_->clientCount();
-    ws_clients_label_->setText(QString::number(count));
-    log("websocket", QString("客户端已连接: %1 (当前 %2 个)")
-        .arg(client->peerAddress().toString()).arg(count));
+    Q_UNUSED(client);
+    ws_clients_label_->setText(QString("客户端: %1").arg(ws_server_->clientCount()));
 }
 
 void MainWindow::onWebSocketClientDisconnected(QWebSocket *client) {
-    int count = ws_server_->clientCount();
-    ws_clients_label_->setText(QString::number(count));
-    log("websocket", QString("客户端已断开 (当前 %1 个)").arg(count));
+    Q_UNUSED(client);
+    ws_clients_label_->setText(QString("客户端: %1").arg(ws_server_->clientCount()));
 }
 
 void MainWindow::onWebSocketAlarm(const QString &alarmId, const QString &alarmType,
                                    int frameId, long long timestampMs) {
-    log("alarm", QString("[%1] %2 (frame %3)")
-        .arg(alarmId, alarmType).arg(frameId));
+    Q_UNUSED(alarmId); Q_UNUSED(frameId); Q_UNUSED(timestampMs);
+    log("alarm", QString("报警: %1").arg(alarmType));
 }
 
 // ============================================================
@@ -1256,100 +1004,14 @@ void MainWindow::onWebSocketAlarm(const QString &alarmId, const QString &alarmTy
 // ============================================================
 
 void MainWindow::onConfigFileChanged(const QString &path) {
-    // 重新监听（某些编辑器保存时会删除再创建文件）
-    config_watcher_->addPath(path);
-
-    // 重新加载配置
-    AppConfig new_cfg = load_config();
-    log("system", "config.json 已变更，正在重新加载...");
-
-    // 更新阈值（滑块 + 运行中的检测线程）
-    conf_threshold_ = new_cfg.box_threshold;
-    nms_threshold_ = new_cfg.nms_threshold;
+    Q_UNUSED(path);
+    log("system", "检测到 config.json 变化，重新加载配置。");
+    AppConfig cfg = load_config();
+    conf_threshold_ = cfg.box_threshold;
+    nms_threshold_ = cfg.nms_threshold;
     conf_slider_->setValue((int)(conf_threshold_ * 100));
     nms_slider_->setValue((int)(nms_threshold_ * 100));
+    updateThresholdLabels();
 
-    // 如果检测线程正在运行，通知阈值变更（通过 DetectThread 重新设置）
-    if (detect_thread_) {
-        log("system", QString("阈值已更新: conf=%1, nms=%2 (下次启动生效)")
-            .arg(conf_threshold_, 0, 'f', 2).arg(nms_threshold_, 0, 'f', 2));
-    }
-
-    // 更新 WebSocket 报警类别
-    if (ws_server_) {
-        WebSocketConfig ws_cfg;
-        ws_cfg.server_host = QString::fromStdString(new_cfg.ws_host);
-        ws_cfg.server_port = new_cfg.ws_port;
-        ws_cfg.enable_alarm = true;
-        for (const auto &name : new_cfg.alarm_class_names)
-            ws_cfg.alarm_class_names.insert(name);
-        ws_server_->updateConfig(ws_cfg);
-        log("websocket", QString("报警类别已更新: %1 个类别")
-            .arg(new_cfg.alarm_class_names.size()));
-    }
-
-    log("system", "配置重新加载完成。");
-}
-
-// ============================================================
-// 检测结果导出
-// ============================================================
-
-void MainWindow::onExportResults() {
-    if (export_records_.empty()) {
-        QMessageBox::information(this, "提示", "暂无检测结果可导出。");
-        return;
-    }
-
-    QString path = QFileDialog::getSaveFileName(this, "导出检测结果", "",
-                    "JSON 文件 (*.json);;CSV 文件 (*.csv);;所有文件 (*.*)");
-    if (path.isEmpty()) return;
-
-    if (path.endsWith(".json", Qt::CaseInsensitive)) {
-        // 导出 JSON
-        QJsonArray records;
-        for (const auto &r : export_records_) {
-            QJsonObject obj;
-            obj["frame_id"] = r.frame_id;
-            obj["class_name"] = QString::fromStdString(r.class_name);
-            obj["confidence"] = QString::number(r.confidence * 100.0f, 'f', 1) + "%";
-            QJsonObject box;
-            box["left"] = r.left;
-            box["top"] = r.top;
-            box["right"] = r.right;
-            box["bottom"] = r.bottom;
-            obj["box"] = box;
-            records.append(obj);
-        }
-        QJsonObject root;
-        root["total_detections"] = static_cast<qint64>(export_records_.size());
-        root["detections"] = records;
-        QFile file(path);
-        if (file.open(QIODevice::WriteOnly)) {
-            file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-            file.close();
-            log("system", QString("已导出 %1 条检测结果到 %2")
-                .arg(export_records_.size()).arg(path));
-        } else {
-            QMessageBox::warning(this, "错误", "无法写入文件: " + path);
-        }
-    } else {
-        // 导出 CSV
-        QFile file(path);
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream ts(&file);
-            ts << "frame_id,class_name,confidence,left,top,right,bottom\n";
-            for (const auto &r : export_records_) {
-                ts << r.frame_id << ","
-                   << QString::fromStdString(r.class_name) << ","
-                   << QString::number(r.confidence * 100.0f, 'f', 1) << "%,"
-                   << r.left << "," << r.top << "," << r.right << "," << r.bottom << "\n";
-            }
-            file.close();
-            log("system", QString("已导出 %1 条检测结果到 %2")
-                .arg(export_records_.size()).arg(path));
-        } else {
-            QMessageBox::warning(this, "错误", "无法写入文件: " + path);
-        }
-    }
+    config_watcher_->addPath("config.json");
 }
