@@ -94,4 +94,11 @@ message(STATUS "Target: yolo_rk3588")
 install(TARGETS yolo_rk3588 DESTINATION rknn_yolov5_demo_Linux)
 install(FILES ${CMAKE_SOURCE_DIR}/config.json DESTINATION rknn_yolov5_demo_Linux)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/model DESTINATION rknn_yolov5_demo_Linux)
+
+# ---- Tests ----
+option(ENABLE_TESTS "Build unit tests" OFF)
+if(ENABLE_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 install(FILES ${RKNN_RT_LIB} ${RGA_LIB} DESTINATION rknn_yolov5_demo_Linux/lib)

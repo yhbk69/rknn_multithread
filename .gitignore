@@ -46,6 +46,8 @@ others/
 CODE_REVIEW_REPORT.md
 plan.md
 
+Testing/
+
 .mimocode/
 include/nlohmann/
 plan_.md
