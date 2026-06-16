@@ -192,9 +192,9 @@ void MainWindow::setupUI() {
         top_layout->setSpacing(4);
 
         cell.channel_label = new QLabel(channel_names[i], top_bar);
-        cell.channel_label->setStyleSheet("color: #5dade2; font-weight: bold; font-size: 12px;");
+        cell.channel_label->setStyleSheet("color: #5dade2; font-weight: bold; font-size: 14px;");
         cell.overlay = new QLabel("FPS: --", top_bar);
-        cell.overlay->setStyleSheet("color: #2ecc71; font-size: 11px;");
+        cell.overlay->setStyleSheet("color: #2ecc71; font-size: 13px; font-weight: bold;");
 
         cell.zoom_in_btn = new QPushButton("放大", top_bar);
         cell.zoom_in_btn->setFixedSize(40, 20);
@@ -269,19 +269,24 @@ void MainWindow::setupUI() {
         video_row->setSpacing(4);
         video_edits_[i] = new QLineEdit(left_panel);
         video_edits_[i]->setPlaceholderText(QString("通道%1: 视频路径或摄像头ID").arg(i + 1));
+        video_edits_[i]->setFixedHeight(32);
         video_alias_edits_[i] = new QLineEdit(left_panel);
         video_alias_edits_[i]->setPlaceholderText("别名");
         video_alias_edits_[i]->setMaximumWidth(80);
+        video_alias_edits_[i]->setFixedHeight(32);
         video_btns_[i] = new QPushButton("浏览", left_panel);
-        video_btns_[i]->setMaximumWidth(70);
+        video_btns_[i]->setFixedWidth(70);
+        video_btns_[i]->setFixedHeight(32);
         video_del_btns_[i] = new QPushButton("×", left_panel);
-        video_del_btns_[i]->setFixedSize(24, 24);
+        video_del_btns_[i]->setFixedSize(32, 32);
         video_del_btns_[i]->setToolTip("清空此路视频源");
         video_del_btns_[i]->setStyleSheet(
-            "QPushButton { background-color: #922b21; color: white; border: none; border-radius: 3px; font-size: 14px; font-weight: bold; }"
+            "QPushButton { background-color: #922b21; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; }"
             "QPushButton:hover { background-color: #c0392b; }");
 
-        video_row->addWidget(new QLabel(QString("路%1:").arg(i + 1), left_panel));
+        QLabel* road_label = new QLabel(QString("路%1:").arg(i + 1), left_panel);
+        road_label->setStyleSheet("color: #e8e8e8; font-size: 13px; font-weight: bold;");
+        video_row->addWidget(road_label);
         video_row->addWidget(video_edits_[i], 1);
         video_row->addWidget(video_alias_edits_[i]);
         video_row->addWidget(video_btns_[i]);
@@ -515,6 +520,7 @@ void MainWindow::setupStyle() {
             color: #f5f5f5;
             selection-background-color: #1a5276;
             font-size: 13px;
+            min-height: 20px;
         }
         QLineEdit:focus {
             border: 1px solid #3498db;
@@ -644,7 +650,7 @@ void MainWindow::setupStyle() {
         }
         QLabel#statusHeader {
             color: #95a5a6;
-            font-size: 12px;
+            font-size: 13px;
         }
         QScrollBar:vertical {
             background-color: #141414;
@@ -1007,7 +1013,22 @@ void MainWindow::onExportResults() {
 // ============================================================
 
 void MainWindow::onWebSocketStarted(quint16 port) {
-    ws_status_label_->setText(QString("ws://0.0.0.0:%1").arg(port));
+    // 获取真实 IP 地址，避免显示 0.0.0.0
+    QString real_ip = "0.0.0.0";
+    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
+        if (iface.flags().testFlag(QNetworkInterface::IsUp) &&
+            iface.flags().testFlag(QNetworkInterface::IsRunning) &&
+            !iface.flags().testFlag(QNetworkInterface::IsLoopBack)) {
+            for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
+                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
+                    real_ip = entry.ip().toString();
+                    break;
+                }
+            }
+            if (real_ip != "0.0.0.0") break;
+        }
+    }
+    ws_status_label_->setText(QString("ws://%1:%2").arg(real_ip).arg(port));
 }
 
 void MainWindow::onWebSocketClientConnected(QWebSocket *client) {
