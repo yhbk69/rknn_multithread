@@ -1,8 +1,8 @@
 /*
- * rkYolov5s.hpp - YOLOv5s 模型推理类的定义
+ * rkYolov5s.hpp - YOLOv5s 模型推理类
  *
- * 本文件定义了 rkYolov5s 类，封装了 YOLOv5s 模型加载、初始化和推理的完整生命周期，
- * 包括 RKNN 模型上下文管理、张量属性配置、多线程安全推理等功能。
+ * 本文件定义了 YOLOv5Engine 类，继承 IEngine 接口，
+ * 封装了 YOLOv5s 模型加载、初始化和推理的完整生命周期。
  */
 
 #ifndef RKYOLOV5S_H
@@ -10,90 +10,70 @@
 
 #include "rknn_api.h"
 #include "postprocess.h"
+#include "core/IEngine.hpp"
 
 #include "opencv2/core/core.hpp"
 
 /*
- * rkYolov5s - YOLOv5s 目标检测推理类
+ * YOLOv5Engine - YOLOv5s 目标检测推理引擎
  *
- * 封装了 RKNN YOLOv5s 模型从加载、初始化到推理的完整流程，
- * 内部使用互斥锁保证多线程推理时的安全性。
+ * 继承 IEngine 抽象接口，内部使用互斥锁保证多线程推理安全。
+ * 兼容 rkNpu 特有的上下文共享和核心绑定。
  */
-class rkYolov5s
+class YOLOv5Engine : public IEngine
 {
 private:
-    int ret;                  // 通用返回值，用于记录各操作的返回状态
-    mutable std::mutex mtx;   // 互斥锁，保证多线程推理安全
-    std::string model_path;   // RKNN 模型文件路径
-    unsigned char *model_data; // 模型二进制数据（加载到内存中）
+    int ret;
+    mutable std::mutex mtx;
+    std::string model_path;
+    unsigned char *model_data = nullptr;
 
-    rknn_context ctx;                   // RKNN 推理上下文
-    rknn_input_output_num io_num;       // 模型输入输出张量数量
-    std::vector<rknn_tensor_attr> input_attrs;      // 输入张量属性数组
-    std::vector<rknn_tensor_attr> output_attrs;     // 输出张量属性数组
-    rknn_input inputs[1];               // 模型输入数据（单输入）
+    rknn_context ctx;
+    rknn_input_output_num io_num;
+    std::vector<rknn_tensor_attr> input_attrs;
+    std::vector<rknn_tensor_attr> output_attrs;
+    rknn_input inputs[1];
 
-    int channel, width, height;   // 模型输入张量的通道数、宽度和高度
-    cv::Mat resized_img_;             // 预分配推理输入图像（避免每帧重新分配）
-    std::vector<float> out_scales_;   // 预计算输出量化缩放因子
-    std::vector<int32_t> out_zps_;   // 预计算输出量化零点
+    int channel, width, height;
+    cv::Mat resized_img_;
+    std::vector<float> out_scales_;
+    std::vector<int32_t> out_zps_;
 
-    float nms_threshold, box_conf_threshold; // NMS 阈值和边界框置信度阈值
+    float nms_threshold, box_conf_threshold;
 
-    detect_result_group_t last_detect_result_; // 最近一次推理的检测结果
-    PostProcessContext post_ctx_;              // 独立的后处理上下文（支持多模型）
+    detect_result_group_t last_detect_result_;
+    PostProcessContext post_ctx_;
 
 public:
-    // P2-3: 三级流水线 Stage P 的输出数据
     struct PipelineData {
-        cv::Mat rgb_img;          // BGR→RGB 转换后的图像
-        cv::Mat padded_img;       // letterbox 填充后的图像
+        cv::Mat rgb_img;
+        cv::Mat padded_img;
         BOX_RECT pads;
         float scale_w = 1.0f;
         float scale_h = 1.0f;
     };
 
+    YOLOv5Engine(const std::string &model_path);
 
-    /* 构造函数：指定模型文件路径，创建推理类实例 */
-    rkYolov5s(const std::string &model_path);
+    // ---- IEngine 接口 ----
+    int init() override;
+    int detect(const cv::Mat &frame, detect_result_group_t *out) override;
+    int getInputWidth() const override { return width; }
+    int getInputHeight() const override { return height; }
+    void setThresholds(float conf, float nms) override;
 
-    /* 动态设置阈值（运行时由 GUI 传入） */
-    void set_thresholds(float conf, float nms) {
-        std::lock_guard<std::mutex> lock(mtx);
-        box_conf_threshold = conf;
-        nms_threshold = nms;
-    }
-
-    /* 获取最近一次推理的检测结果（线程安全，返回拷贝） */
+    // ---- rknn 特有（供 rknnPool 调用） ----
+    int rknn_init(rknn_context *ctx_in, bool share_weight, int core_num = -1);
+    rknn_context *get_pctx();
     detect_result_group_t getLastDetectResult() const {
         std::lock_guard<std::mutex> lock(mtx);
         return last_detect_result_;
     }
 
-    /*
-     * 初始化模型：加载模型数据、创建 RKNN 上下文、配置输入输出张量属性
-     *
-     * @param ctx_in   外部传入的 RKNN 上下文指针（用于共享上下文场景）
-     * @param isChild  是否为子线程实例（子线程复用父线程的上下文）
-     * @param core_num 指定绑定的 NPU 核心编号（-1 使用旧轮询策略）
-     * @return         成功返回 0，失败返回非零值
-     */
-    int init(rknn_context *ctx_in, bool isChild, int core_num = -1);
+    // ---- 推理入口（供 rknnPool 模板调用） ----
+    cv::Mat infer(cv::Mat &orig_img, detect_result_group_t *out_group = nullptr);
 
-    /* 获取当前 RKNN 推理上下文的指针（用于子线程共享上下文） */
-    rknn_context *get_pctx();
-
-    /*
-     * 执行一次目标检测推理
-     *
-     * @param ori_img    输入原始图像（OpenCV BGR 格式）
-     * @param out_group  [可选] 输出原始检测结果组，传 NULL 时不输出
-     * @return           标注了检测框和类别信息的结果图像
-     */
-    cv::Mat infer(cv::Mat &ori_img, detect_result_group_t *out_group = NULL);
-
-    /* 析构函数：释放模型数据、张量属性及 RKNN 上下文等资源 */
-    ~rkYolov5s();
+    ~YOLOv5Engine() override;
 };
 
 #endif

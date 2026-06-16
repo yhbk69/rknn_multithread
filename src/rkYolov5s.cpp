@@ -126,7 +126,7 @@ static int saveFloat(const char *file_name, float *output, int element_size)
 /**
  * 构造函数: 初始化模型路径和默认阈值
  */
-rkYolov5s::rkYolov5s(const std::string &model_path)
+YOLOv5Engine::YOLOv5Engine(const std::string &model_path)
 {
     this->model_path = model_path;
     // 从配置加载阈值
@@ -135,13 +135,43 @@ rkYolov5s::rkYolov5s(const std::string &model_path)
     box_conf_threshold = cfg.box_threshold;
 }
 
+// ---- IEngine 接口实现 ----
+
 /**
- * 初始化RKNN模型
+ * IEngine::init — 通用初始化（无参，用于非 rknn 场景或 mock 测试）
+ */
+int YOLOv5Engine::init() {
+    return rknn_init(nullptr, false, -1);
+}
+
+/**
+ * IEngine::detect — 执行检测并返回结果
+ */
+int YOLOv5Engine::detect(const cv::Mat &frame, detect_result_group_t *out) {
+    cv::Mat mutable_frame = frame.clone();
+    infer(mutable_frame, out);
+    return 0;
+}
+
+/**
+ * IEngine::setThresholds — 动态设置阈值
+ */
+void YOLOv5Engine::setThresholds(float conf, float nms) {
+    std::lock_guard<std::mutex> lock(mtx);
+    box_conf_threshold = conf;
+    nms_threshold = nms;
+}
+
+// ---- rknn 特有初始化 ----
+
+/**
+ * rknn_init — RKNN 模型初始化（支持上下文共享和核心绑定）
  * @param ctx_in 主模型上下文指针，用于共享模型参数
  * @param share_weight 是否共享模型参数(第一个实例为false，后续实例为true)
+ * @param core_num 指定绑定的 NPU 核心编号（-1 使用全局轮询）
  * @return 0成功，-1失败
  */
-int rkYolov5s::init(rknn_context *ctx_in, bool share_weight, int core_num)
+int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_num)
 {
     printf("Loading model...\n");
 
@@ -166,7 +196,7 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight, int core_num)
     if (share_weight == true)
         ret = rknn_dup_context(ctx_in, &ctx);
     else
-        ret = rknn_init(&ctx, model_data, model_data_size, 0, NULL);
+        ret = ::rknn_init(&ctx, model_data, model_data_size, 0, NULL);
 
     if (ret < 0)
     {
@@ -293,7 +323,7 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight, int core_num)
 /**
  * 获取模型上下文指针，用于子模型共享参数
  */
-rknn_context *rkYolov5s::get_pctx()
+rknn_context *YOLOv5Engine::get_pctx()
 {
     return &ctx;
 }
@@ -302,7 +332,7 @@ rknn_context *rkYolov5s::get_pctx()
  * P2-3: 三级流水线 - Stage P (CPU)
  * BGR→RGB 转换 + letterbox 缩放填充（纯 CPU 操作，可与其他实例的 NPU 推理重叠）
  */
-static void stage_preprocess(cv::Mat &orig_img, rkYolov5s::PipelineData &data, int model_w, int model_h)
+static void stage_preprocess(cv::Mat &orig_img, YOLOv5Engine::PipelineData &data, int model_w, int model_h)
 {
     cv::cvtColor(orig_img, data.rgb_img, cv::COLOR_BGR2RGB);
     int img_w = data.rgb_img.cols;
@@ -333,7 +363,7 @@ static void stage_preprocess(cv::Mat &orig_img, rkYolov5s::PipelineData &data, i
  * @param out_group  [可选] 输出原始检测结果组，传 NULL 时不输出
  * @return 绘制了检测框的图像
  */
-cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
+cv::Mat YOLOv5Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 {
     // 仅锁读取共享阈值，推理过程不需持锁
     float conf, nms;
@@ -358,7 +388,7 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     ret = rknn_inputs_set(ctx, io_num.n_input, inputs);
     if (ret < 0)
     {
-        fprintf(stderr, "[rkYolov5s] rknn_inputs_set failed, ret=%d\n", ret);
+        fprintf(stderr, "[YOLOv5Engine] rknn_inputs_set failed, ret=%d\n", ret);
         return orig_img;
     }
 
@@ -431,7 +461,7 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 /**
  * 析构函数: 释放模型资源
  */
-rkYolov5s::~rkYolov5s()
+YOLOv5Engine::~YOLOv5Engine()
 {
     // post_ctx_ / input_attrs / output_attrs 自动 RAII 析构
 

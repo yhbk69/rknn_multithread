@@ -36,7 +36,7 @@ int main(int argc, char **argv)
     initLabelPath(model_name);
 
     // 初始化RKNN线程池
-    rknnPool<rkYolov5s, cv::Mat, cv::Mat> testPool(model_name, config.thread_num);
+    rknnPool<YOLOv5Engine, cv::Mat, cv::Mat> testPool(model_name, config.thread_num);
     if (testPool.init() != 0)
     {
         printf("rknnPool init fail!\n");

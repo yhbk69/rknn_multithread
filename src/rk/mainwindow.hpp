@@ -48,7 +48,7 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "rkYolov5s.hpp"
+#include "rkYolov5s.hpp"   // YOLOv5Engine
 #include "rknnPool.hpp"
 #include "config_loader.hpp"
 #include "postprocess.h"
@@ -97,7 +97,7 @@ signals:
 
 protected:
     void run() override {
-        auto pool = std::make_unique<rknnPool<rkYolov5s, cv::Mat, cv::Mat>>(model_path_.c_str(), thread_num_, channel_id_);
+        auto pool = std::make_unique<rknnPool<YOLOv5Engine, cv::Mat, cv::Mat>>(model_path_.c_str(), thread_num_, channel_id_);
         if (pool->init() != 0) {
             emit error(QString("[Ch%1] rknnPool init failed!").arg(channel_id_));
             emit finished();

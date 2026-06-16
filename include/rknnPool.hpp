@@ -81,7 +81,7 @@ int rknnPool<rknnModel, inputType, outputType>::init()
     for (int i = 0, ret = 0; i < threadNum; i++)
     {
         int core = get_core_for_channel(channel_id_, i);
-        ret = models[i]->init(models[0]->get_pctx(), i != 0, core);
+        ret = models[i]->rknn_init(models[0]->get_pctx(), i != 0, core);
         if (ret != 0)
             return ret;
     }
@@ -156,7 +156,7 @@ template <typename rknnModel, typename inputType, typename outputType>
 void rknnPool<rknnModel, inputType, outputType>::set_thresholds(float conf, float nms)
 {
     for (auto& model : models) {
-        model->set_thresholds(conf, nms);
+        model->setThresholds(conf, nms);
     }
 }
 
