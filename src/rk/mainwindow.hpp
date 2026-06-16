@@ -316,8 +316,10 @@ private:
     // --- 控制区 ---
     QLineEdit* model_edit_;
     QLineEdit* video_edits_[MAX_CHANNELS];
+    QLineEdit* video_alias_edits_[MAX_CHANNELS];
     QPushButton* model_btn_;
     QPushButton* video_btns_[MAX_CHANNELS];
+    QPushButton* video_del_btns_[MAX_CHANNELS];
     QPushButton* load_btn_;
     QPushButton* start_btn_;
     QPushButton* stop_btn_;

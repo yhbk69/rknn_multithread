@@ -269,16 +269,38 @@ void MainWindow::setupUI() {
         video_row->setSpacing(4);
         video_edits_[i] = new QLineEdit(left_panel);
         video_edits_[i]->setPlaceholderText(QString("通道%1: 视频路径或摄像头ID").arg(i + 1));
+        video_alias_edits_[i] = new QLineEdit(left_panel);
+        video_alias_edits_[i]->setPlaceholderText("别名");
+        video_alias_edits_[i]->setMaximumWidth(80);
         video_btns_[i] = new QPushButton("浏览", left_panel);
         video_btns_[i]->setMaximumWidth(70);
+        video_del_btns_[i] = new QPushButton("×", left_panel);
+        video_del_btns_[i]->setFixedSize(24, 24);
+        video_del_btns_[i]->setToolTip("清空此路视频源");
+        video_del_btns_[i]->setStyleSheet(
+            "QPushButton { background-color: #922b21; color: white; border: none; border-radius: 3px; font-size: 14px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #c0392b; }");
 
         video_row->addWidget(new QLabel(QString("路%1:").arg(i + 1), left_panel));
         video_row->addWidget(video_edits_[i], 1);
+        video_row->addWidget(video_alias_edits_[i]);
         video_row->addWidget(video_btns_[i]);
+        video_row->addWidget(video_del_btns_[i]);
         ctrl_layout->addLayout(video_row);
 
         int ch = i;
         connect(video_btns_[i], &QPushButton::clicked, this, [this, ch]() { onBrowseVideo(ch); });
+        connect(video_del_btns_[i], &QPushButton::clicked, this, [this, ch]() {
+            video_edits_[ch]->clear();
+            video_alias_edits_[ch]->clear();
+            video_cells_[ch].channel_label->setText(QString("通道%1").arg(ch + 1));
+        });
+        connect(video_alias_edits_[i], &QLineEdit::textChanged, this, [this, ch](const QString& text) {
+            if (text.isEmpty())
+                video_cells_[ch].channel_label->setText(QString("通道%1").arg(ch + 1));
+            else
+                video_cells_[ch].channel_label->setText(QString("通道%1(%2)").arg(ch + 1).arg(text));
+        });
     }
 
     // 按钮行
@@ -683,8 +705,10 @@ QString MainWindow::formatSize(qint64 bytes) {
 void MainWindow::saveSettings() {
     QSettings s("RK3588", "YOLO_Detector");
     s.setValue("model_path", model_edit_->text());
-    for (int i = 0; i < MAX_CHANNELS; i++)
+    for (int i = 0; i < MAX_CHANNELS; i++) {
         s.setValue(QString("video_path_%1").arg(i), video_edits_[i]->text());
+        s.setValue(QString("video_alias_%1").arg(i), video_alias_edits_[i]->text());
+    }
     s.setValue("thread_num", thread_spin_->value());
     s.setValue("conf_threshold", conf_threshold_);
     s.setValue("nms_threshold", nms_threshold_);
@@ -699,6 +723,9 @@ void MainWindow::restoreSettings() {
         QString key = QString("video_path_%1").arg(i);
         if (s.contains(key))
             video_edits_[i]->setText(s.value(key).toString());
+        QString alias_key = QString("video_alias_%1").arg(i);
+        if (s.contains(alias_key))
+            video_alias_edits_[i]->setText(s.value(alias_key).toString());
     }
     if (s.contains("thread_num"))
         thread_spin_->setValue(s.value("thread_num", 3).toInt());
