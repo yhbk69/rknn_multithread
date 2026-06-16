@@ -156,39 +156,37 @@ protected:
             if (pool->put(detect_img) != 0) break;
             if (frames >= thread_num_ && pool->get(detect_img) != 0) break;
 
-            // ROI 模式：将检测结果坐标偏移回原图并绘制
-            if (roi_enabled_ && !roi_rect_.isNull() && frames >= thread_num_) {
-                detect_result_group_t &result = const_cast<detect_result_group_t&>(pool->getLastDetectResult());
-                for (int i = 0; i < result.count; i++) {
-                    result.results[i].box.left += roi_x;
-                    result.results[i].box.right += roi_x;
-                    result.results[i].box.top += roi_y;
-                    result.results[i].box.bottom += roi_y;
-                }
-                // detect_img (crop) 有 infer() 画的框，将其贴回原图
-                detect_img.copyTo(img(cv::Range(roi_y, roi_y + detect_img.rows),
-                                      cv::Range(roi_x, roi_x + detect_img.cols)));
-            }
-
-            // 非 ROI 模式：detect_img 已由 infer() 绘制了检测框
-            // 统一使用 detect_img 作为输出帧
-            cv::Mat& out_frame = (frames >= thread_num_) ? detect_img : img;
-
             if (frames >= thread_num_) {
+                detect_result_group_t result = pool->getLastDetectResult();
+
+                // ROI 模式：将检测结果坐标偏移回原图并绘制
+                if (roi_enabled_ && !roi_rect_.isNull()) {
+                    for (int i = 0; i < result.count; i++) {
+                        result.results[i].box.left += roi_x;
+                        result.results[i].box.right += roi_x;
+                        result.results[i].box.top += roi_y;
+                        result.results[i].box.bottom += roi_y;
+                    }
+                    detect_img.copyTo(img(cv::Range(roi_y, roi_y + detect_img.rows),
+                                          cv::Range(roi_x, roi_x + detect_img.cols)));
+                }
+
+                // 报警
                 if (auto ws = ws_.lock()) {
                     if (ws->isAlarmEnabled())
-                        ws->checkAndAlarm(&pool->getLastDetectResult(), frames);
+                        ws->checkAndAlarm(&result, frames);
                 }
-            }
 
-            if (frames >= thread_num_) {
-                const detect_result_group_t &result = pool->getLastDetectResult();
+                // 发射检测结果信号
                 for (int i = 0; i < result.count; i++) {
                     const detect_result_t &det = result.results[i];
                     emit detectionResult(frames, QString::fromUtf8(det.name), det.prop,
                                          det.box.left, det.box.top, det.box.right, det.box.bottom);
                 }
             }
+
+            // 非 ROI 模式：detect_img 已由 infer() 绘制了检测框
+            cv::Mat& out_frame = (frames >= thread_num_) ? detect_img : img;
 
             long long infer_end = get_time_ms();
             double infer_time = (double)(infer_end - infer_start);

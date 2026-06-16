@@ -126,7 +126,6 @@ static int saveFloat(const char *file_name, float *output, int element_size)
  * 构造函数: 初始化模型路径和默认阈值
  */
 rkYolov5s::rkYolov5s(const std::string &model_path)
-    : post_ctx_(PostProcessContext())
 {
     this->model_path = model_path;
     // 从配置加载阈值
@@ -224,39 +223,23 @@ int rkYolov5s::init(rknn_context *ctx_in, bool share_weight)
     printf("model input num: %d, output num: %d\n", io_num.n_input, io_num.n_output);
 
     // 查询并设置输入张量属性
-    // 获取每个输入张量的维度、数据类型、格式等信息
-    input_attrs = (rknn_tensor_attr *)calloc(io_num.n_input, sizeof(rknn_tensor_attr));
-    if (input_attrs == nullptr)
-    {
-        printf("calloc input_attrs failure\n");
-        free(model_data);
-        model_data = nullptr;
-        return -1;
-    }
+    input_attrs.resize(io_num.n_input);
     for (int i = 0; i < io_num.n_input; i++)
     {
         input_attrs[i].index = i;
         ret = rknn_query(ctx, RKNN_QUERY_INPUT_ATTR, &(input_attrs[i]), sizeof(rknn_tensor_attr));
-    if (ret < 0)
-    {
-        printf("rknn_init error ret=%d\n", ret);
-        free(model_data);
-        model_data = nullptr;
-        return -1;
-    }
+        if (ret < 0)
+        {
+            printf("rknn_init error ret=%d\n", ret);
+            free(model_data);
+            model_data = nullptr;
+            return -1;
+        }
         dump_tensor_attr(&(input_attrs[i]));
     }
 
     // 查询并设置输出张量属性
-    // YOLOv5s有3个输出，分别对应3个不同尺度的特征图
-    output_attrs = (rknn_tensor_attr *)calloc(io_num.n_output, sizeof(rknn_tensor_attr));
-    if (output_attrs == nullptr)
-    {
-        printf("calloc output_attrs failure\n");
-        free(model_data);
-        model_data = nullptr;
-        return -1;
-    }
+    output_attrs.resize(io_num.n_output);
     for (int i = 0; i < io_num.n_output; i++)
     {
         output_attrs[i].index = i;
@@ -309,29 +292,29 @@ rknn_context *rkYolov5s::get_pctx()
  */
 cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 {
-    // 加锁保证线程安全，防止多个线程同时操作同一个模型实例
-    std::lock_guard<std::mutex> lock(mtx);
+    // 仅锁读取共享阈值，推理过程不需持锁
+    float conf, nms;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        conf = box_conf_threshold;
+        nms = nms_threshold;
+    }
 
-    // BGR转RGB(RKNN模型期望RGB输入)
     cv::Mat img;
     cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
-    img_width = img.cols;
-    img_height = img.rows;
+    int img_width = img.cols;
+    int img_height = img.rows;
 
-    // 用于存储letterbox的填充信息
     BOX_RECT pads;
     memset(&pads, 0, sizeof(BOX_RECT));
     cv::Size target_size(width, height);
     cv::Mat resized_img(target_size.height, target_size.width, CV_8UC3);
 
-    // 计算图像缩放比例
     float scale_w = (float)target_size.width / img.cols;
     float scale_h = (float)target_size.height / img.rows;
 
-    // 如果输入图像尺寸与模型期望尺寸不同，则需要缩放
     if (img_width != width || img_height != height)
     {
-        // 使用Letterbox缩放(保持宽高比，填充灰边)
         float min_scale = std::min(scale_w, scale_h);
         scale_w = min_scale;
         scale_h = min_scale;
@@ -340,31 +323,24 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     }
     else
     {
-        // 图像尺寸匹配，直接使用原始图像数据
         scale_w = 1.0f;
         scale_h = 1.0f;
         memset(&pads, 0, sizeof(pads));
         inputs[0].buf = img.data;
     }
 
-    // 设置模型输入数据
     ret = rknn_inputs_set(ctx, io_num.n_input, inputs);
     if (ret < 0)
     {
         fprintf(stderr, "[rkYolov5s] rknn_inputs_set failed, ret=%d\n", ret);
-        last_detect_result_.count = 0;
         return orig_img;
     }
 
-    // 准备输出缓冲区
     rknn_output outputs[io_num.n_output];
     memset(outputs, 0, sizeof(outputs));
     for (int i = 0; i < io_num.n_output; i++)
-    {
         outputs[i].want_float = 0;
-    }
 
-    // 执行模型推理（失败时重试，最多 3 次）
     int max_retry = 3;
     bool infer_ok = false;
     for (int retry = 0; retry < max_retry; retry++)
@@ -381,7 +357,6 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
         {
             fprintf(stderr, "[rkYolov5s] rknn_outputs_get failed (retry %d/%d), ret=%d\n",
                     retry + 1, max_retry, ret);
-            rknn_outputs_release(ctx, io_num.n_output, outputs);
             continue;
         }
         infer_ok = true;
@@ -391,56 +366,44 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     if (!infer_ok)
     {
         fprintf(stderr, "[rkYolov5s] inference failed after %d retries, skipping frame\n", max_retry);
-        last_detect_result_.count = 0;
         return orig_img;
     }
 
-    // 后处理: 解码检测框、NMS过滤
     detect_result_group_t detect_result_group;
     std::vector<float> out_scales;
     std::vector<int32_t> out_zps;
-    // 收集输出张量的量化参数(缩放因子和零点)
     for (int i = 0; i < io_num.n_output; ++i)
     {
         out_scales.push_back(output_attrs[i].scale);
         out_zps.push_back(output_attrs[i].zp);
     }
+    post_ctx_.process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf,
+                 height, width, conf, nms, pads, scale_w, scale_h,
+                 out_zps, out_scales, &detect_result_group);
 
-    // 执行后处理: 解码边界框、置信度过滤、NMS去重
-    post_ctx_.process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf, height, width,
-                 box_conf_threshold, nms_threshold, pads, scale_w, scale_h, out_zps, out_scales, &detect_result_group);
-
-    // 在原始图像上绘制检测框和标签
     char text[256];
     for (int i = 0; i < detect_result_group.count; i++)
     {
         detect_result_t *det_result = &(detect_result_group.results[i]);
         snprintf(text, sizeof(text), "%s %.1f%%", det_result->name, det_result->prop * 100);
-
-        int x1 = det_result->box.left;
-        int y1 = det_result->box.top;
-        int x2 = det_result->box.right;
-        int y2 = det_result->box.bottom;
-
-        // 绘制蓝色矩形框
-        rectangle(orig_img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255, 0, 0), 3);
-        // 绘制类别名称和置信度
-        putText(orig_img, text, cv::Point(x1, y1 + 12), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255));
+        rectangle(orig_img, cv::Point(det_result->box.left, det_result->box.top),
+                  cv::Point(det_result->box.right, det_result->box.bottom), cv::Scalar(255, 0, 0), 3);
+        putText(orig_img, text, cv::Point(det_result->box.left, det_result->box.top + 12),
+                cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255));
     }
 
-    // 如果调用方需要原始检测结果，拷贝输出
-    if (out_group) {
+    if (out_group)
         *out_group = detect_result_group;
-    }
-    // 始终保存最近一次检测结果，供 getLastDetectResult() 获取
-    last_detect_result_ = detect_result_group;
 
-    // 释放输出缓冲区
+    // 仅写回检测结果时持锁
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        last_detect_result_ = detect_result_group;
+    }
+
     ret = rknn_outputs_release(ctx, io_num.n_output, outputs);
     if (ret < 0)
-    {
         fprintf(stderr, "[rkYolov5s] rknn_outputs_release failed, ret=%d\n", ret);
-    }
 
     return orig_img;
 }
@@ -450,18 +413,10 @@ cv::Mat rkYolov5s::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
  */
 rkYolov5s::~rkYolov5s()
 {
-    // post_ctx_ 析构函数自动清理标签内存
+    // post_ctx_ / input_attrs / output_attrs 自动 RAII 析构
 
-    // 销毁RKNN模型上下文
     ret = rknn_destroy(ctx);
 
-    // 释放模型数据内存
     if (model_data)
         free(model_data);
-
-    // 释放输入输出属性内存
-    if (input_attrs)
-        free(input_attrs);
-    if (output_attrs)
-        free(output_attrs);
 }

@@ -29,6 +29,7 @@ private:
     std::queue<int> model_ids_;                                // 每个任务对应的模型 ID
     std::vector<std::shared_ptr<rknnModel>> models;            // 模型实例数组
     int last_model_id_ = -1;                                   // 最近一次 get() 使用的模型 ID
+    static constexpr size_t MAX_QUEUE_SIZE = 16;               // 队列最大容量，超过时丢弃旧帧
 
 protected:
     int getModelId();  // 轮询获取模型实例 ID，实现负载均衡
@@ -40,8 +41,8 @@ public:
     int put(const inputType &inputData);
     // 获取最早的推理结果（阻塞等待）
     int get(outputType &outputData);
-    // 获取最近一次 get() 对应模型的检测结果
-    const detect_result_group_t& getLastDetectResult() const;
+    // 获取最近一次 get() 对应模型的检测结果（线程安全，返回拷贝）
+    detect_result_group_t getLastDetectResult() const;
     // 动态设置所有模型实例的阈值
     void set_thresholds(float conf, float nms);
     ~rknnPool();  // 析构函数：等待所有剩余推理任务完成后释放资源
@@ -95,10 +96,17 @@ int rknnPool<rknnModel, inputType, outputType>::getModelId()
 
 // 提交推理任务到线程池（非阻塞）
 // 将输入数据和对应的模型实例绑定后提交到线程池执行，返回的 future 存入队列
+// 队列满时丢弃最旧的未处理帧，防止内存无限增长
 template <typename rknnModel, typename inputType, typename outputType>
 int rknnPool<rknnModel, inputType, outputType>::put(const inputType &inputData)
 {
     std::lock_guard<std::mutex> lock(queueMtx);
+    if (futs.size() >= MAX_QUEUE_SIZE)
+    {
+        // 队列满，直接丢弃最旧帧（future 来自 packaged_task，析构不阻塞）
+        futs.pop();
+        model_ids_.pop();
+    }
     int modelId = this->getModelId();
     auto model = models[modelId];
     inputType img = inputData;
@@ -133,7 +141,7 @@ int rknnPool<rknnModel, inputType, outputType>::get(outputType &outputData)
 
 // 获取最近一次 get() 对应模型的检测结果
 template <typename rknnModel, typename inputType, typename outputType>
-const detect_result_group_t& rknnPool<rknnModel, inputType, outputType>::getLastDetectResult() const
+detect_result_group_t rknnPool<rknnModel, inputType, outputType>::getLastDetectResult() const
 {
     return models[last_model_id_]->getLastDetectResult();
 }

@@ -23,14 +23,14 @@ class rkYolov5s
 {
 private:
     int ret;                  // 通用返回值，用于记录各操作的返回状态
-    std::mutex mtx;           // 互斥锁，保证多线程推理安全
+    mutable std::mutex mtx;   // 互斥锁，保证多线程推理安全
     std::string model_path;   // RKNN 模型文件路径
     unsigned char *model_data; // 模型二进制数据（加载到内存中）
 
     rknn_context ctx;                   // RKNN 推理上下文
     rknn_input_output_num io_num;       // 模型输入输出张量数量
-    rknn_tensor_attr *input_attrs;      // 输入张量属性数组
-    rknn_tensor_attr *output_attrs;     // 输出张量属性数组
+    std::vector<rknn_tensor_attr> input_attrs;      // 输入张量属性数组
+    std::vector<rknn_tensor_attr> output_attrs;     // 输出张量属性数组
     rknn_input inputs[1];               // 模型输入数据（单输入）
 
     int channel, width, height;   // 模型输入张量的通道数、宽度和高度
@@ -52,8 +52,9 @@ public:
         nms_threshold = nms;
     }
 
-    /* 获取最近一次推理的检测结果 */
-    const detect_result_group_t& getLastDetectResult() const {
+    /* 获取最近一次推理的检测结果（线程安全，返回拷贝） */
+    detect_result_group_t getLastDetectResult() const {
+        std::lock_guard<std::mutex> lock(mtx);
         return last_detect_result_;
     }
 
