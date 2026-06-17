@@ -9,6 +9,7 @@
 #include <QFrame>
 #include <QFileInfo>
 #include <QNetworkInterface>
+#include <QFileDialog>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), expanded_ch_(-1)
@@ -48,6 +49,7 @@ MainWindow::MainWindow(QWidget* parent)
     ws_cfg.enable_alarm = true;
     for (const auto &name : init_cfg.alarm_class_names)
         ws_cfg.alarm_class_names.insert(name);
+    ws_cfg.alarm_screenshot_dir = init_cfg.alarm_screenshot_dir;
     if (ws_server_->init(ws_cfg) == 0) {
         log("websocket", QString("服务器已启动: ws://%1:%2")
             .arg(ws_cfg.server_host).arg(ws_cfg.server_port));
@@ -323,6 +325,35 @@ void MainWindow::setupUI() {
     thr_row->addWidget(nms_slider_, 1);
     thr_row->addWidget(nms_value_label_);
     ctrl_layout->addLayout(thr_row);
+
+    // 报警截图目录行
+    QHBoxLayout* screenshot_dir_row = new QHBoxLayout();
+    screenshot_dir_row->setSpacing(4);
+    alarm_screenshot_edit_ = new QLineEdit(QString::fromStdString(cfg.alarm_screenshot_dir), left_panel);
+    alarm_screenshot_edit_->setPlaceholderText("报警截图保存目录（空=不保存）");
+    alarm_screenshot_btn_ = new QPushButton("浏览", left_panel);
+    alarm_screenshot_btn_->setMaximumWidth(70);
+    screenshot_dir_row->addWidget(new QLabel("报警截图:", left_panel));
+    screenshot_dir_row->addWidget(alarm_screenshot_edit_, 1);
+    screenshot_dir_row->addWidget(alarm_screenshot_btn_);
+    ctrl_layout->addLayout(screenshot_dir_row);
+
+    connect(alarm_screenshot_btn_, &QPushButton::clicked, this, [this]() {
+        QString dir = QFileDialog::getExistingDirectory(this, "选择报警截图保存目录",
+                                                        alarm_screenshot_edit_->text());
+        if (!dir.isEmpty()) {
+            alarm_screenshot_edit_->setText(dir);
+        }
+    });
+    connect(alarm_screenshot_edit_, &QLineEdit::textChanged, this, [this](const QString &text) {
+        std::string dir = text.toStdString();
+        syncAlarmScreenshotDirToConfig(dir);
+        if (ws_server_) {
+            WebSocketConfig wscfg;
+            wscfg.alarm_screenshot_dir = dir;
+            ws_server_->init(wscfg);
+        }
+    });
 
     left_layout->addWidget(control_frame, 0);
 

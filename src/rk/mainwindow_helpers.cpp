@@ -5,6 +5,9 @@
 #include "rk/mainwindow.hpp"
 #include <QDateTime>
 #include <QSettings>
+#include <fstream>
+#include "nlohmann/json.hpp"
+using json = nlohmann::json;
 
 QString MainWindow::currentTimestamp() {
     return QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
@@ -76,6 +79,27 @@ void MainWindow::restoreSettings() {
     }
     if (s.contains("geometry"))
         restoreGeometry(s.value("geometry").toByteArray());
+}
+
+void MainWindow::syncAlarmScreenshotDirToConfig(const std::string &dir) {
+    std::ifstream ifs("config.json");
+    if (!ifs.is_open()) return;
+    json j;
+    try { ifs >> j; } catch (...) { return; }
+    ifs.close();
+
+    if (j.contains("websocket")) {
+        j["websocket"]["alarm_screenshot_dir"] = dir;
+    } else if (j.contains("alarm_screenshot_dir")) {
+        j["alarm_screenshot_dir"] = dir;
+    } else {
+        j["alarm_screenshot_dir"] = dir;
+    }
+
+    std::ofstream ofs("config.json");
+    if (ofs.is_open()) {
+        ofs << j.dump(4);
+    }
 }
 
 void MainWindow::updateZoomState() {

@@ -13,6 +13,9 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <opencv2/imgcodecs.hpp>
 #include <QJsonArray>
 #include <QHostAddress>
 #include <cstdio>
@@ -154,7 +157,8 @@ void WebSocket::sendToClient(QWebSocket *client, const QString &message)
  *  "timestamp":1700000000000,"video_url":"","image_url":""}}
  * ============================================================ */
 
-int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int frame_id)
+int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int frame_id,
+                             const cv::Mat &frame)
 {
     if (!ws_server_ || !detect_results)
         return 0;
@@ -210,6 +214,22 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
                 if (client->isValid())
                     client->sendTextMessage(json);
             }
+        }
+
+        /* 保存报警截图 */
+        if (!frame.empty() && !config_.alarm_screenshot_dir.empty()) {
+            char screenshot_path[512];
+            snprintf(screenshot_path, sizeof(screenshot_path), "%s/alarm_%s_frame%d_%lld.jpg",
+                     config_.alarm_screenshot_dir.c_str(),
+                     det.name, frame_id, now_ms);
+            /* 确保目录存在 */
+            std::string dir = config_.alarm_screenshot_dir;
+            if (access(dir.c_str(), F_OK) != 0) {
+                mkdir(dir.c_str(), 0755);
+            }
+            cv::imwrite(screenshot_path, frame);
+            data["image_url"] = screenshot_path;
+            printf("[WebSocket] Screenshot saved: %s\n", screenshot_path);
         }
 
         alarm_count++;

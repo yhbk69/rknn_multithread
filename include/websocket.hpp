@@ -39,6 +39,8 @@
 #include <set>
 #include <sys/time.h>
 
+#include <opencv2/core.hpp>
+
 #include "postprocess.h"
 
 /* ============================================================
@@ -75,6 +77,9 @@ struct WebSocketConfig
     bool enable_alarm = true;             // 是否启用检测报警
     std::set<int> alarm_class_ids;        // 需要报警的类别 ID 集合
     std::set<std::string> alarm_class_names; // 需要报警的类别名称集合
+
+    /* 报警截图保存 */
+    std::string alarm_screenshot_dir;     // 截图保存目录，空则不保存
 };
 
 /* ============================================================
@@ -130,9 +135,11 @@ public:
      * 检查检测结果，对匹配类别的目标生成报警并广播
      * @param detect_results 检测结果组
      * @param frame_id       帧编号
+     * @param frame          可选：当前帧图像，传入后自动保存报警截图
      * @return 本次触发的报警数量
      */
-    int checkAndAlarm(const detect_result_group_t *detect_results, int frame_id);
+    int checkAndAlarm(const detect_result_group_t *detect_results, int frame_id,
+                      const cv::Mat &frame = cv::Mat());
 
     /* 手动发送报警（外部调用） */
     void sendAlarm(const QString &alarmType, const QString &videoUrl = "",

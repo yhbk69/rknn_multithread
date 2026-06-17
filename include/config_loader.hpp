@@ -54,6 +54,7 @@ struct AppConfig
     std::string ws_host;
     int ws_port;
     std::vector<std::string> alarm_class_names;
+    std::string alarm_screenshot_dir;
 
     std::string label_path;
 
@@ -195,6 +196,8 @@ inline AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH, bool
             for (const auto& name : w["alarm_class_names"])
                 config.alarm_class_names.push_back(name.get<std::string>());
         }
+        if (w.contains("alarm_screenshot_dir"))
+            config.alarm_screenshot_dir = w["alarm_screenshot_dir"].get<std::string>();
     }
 
     config.resolve_label_path();

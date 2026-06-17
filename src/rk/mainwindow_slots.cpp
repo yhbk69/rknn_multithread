@@ -409,5 +409,10 @@ void MainWindow::onConfigFileChanged(const QString &path) {
     nms_slider_->setValue((int)(nms_threshold_ * 100));
     updateThresholdLabels();
     config_watcher_->removePath(QFileInfo("config.json").absoluteFilePath());
+    if (ws_server_) {
+        WebSocketConfig wscfg;
+        wscfg.alarm_screenshot_dir = cfg.alarm_screenshot_dir;
+        ws_server_->init(wscfg);
+    }
     config_watcher_->addPath(QFileInfo("config.json").absoluteFilePath());
 }

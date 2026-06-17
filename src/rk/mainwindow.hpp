@@ -185,7 +185,7 @@ protected:
 
                 if (auto ws = ws_.lock()) {
                     if (ws->isAlarmEnabled())
-                        ws->checkAndAlarm(&result, frames);
+                        ws->checkAndAlarm(&result, frames, detect_img);
                 }
 
                 for (int i = 0; i < result.count; i++) {
@@ -311,6 +311,7 @@ private:
     void saveSettings();
     void restoreSettings();
     void updateZoomState();
+    void syncAlarmScreenshotDirToConfig(const std::string &dir);
 
     // --- 视频显示网格 ---
     VideoCell video_cells_[MAX_CHANNELS];
@@ -337,6 +338,8 @@ private:
     QLabel* conf_value_label_;
     QLabel* nms_value_label_;
     QLabel* model_status_left_label_;  // 控制区模型状态
+    QLineEdit* alarm_screenshot_edit_;
+    QPushButton* alarm_screenshot_btn_;
 
     // --- 右侧面板 ---
     QLabel* model_status_label_;

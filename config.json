@@ -1,26 +1,50 @@
 {
-  "model": {
-    "path": "./model/RK3588/yolov5s-640-640.rknn",
-    "label_file": "coco_80_labels_list.txt",
-    "input_width": 640,
-    "input_height": 640
-  },
-  "detection": {
-    "nms_threshold": 0.45,
-    "box_threshold": 0.25,
-    "class_num": 80
-  },
-  "runtime": {
-    "thread_num": 3
-  },
-  "anchor": {
-    "small": [10, 13, 16, 30, 33, 23],
-    "medium": [30, 61, 62, 45, 59, 119],
-    "large": [116, 90, 156, 198, 373, 326]
-  },
-  "websocket": {
-    "host": "0.0.0.0",
-    "port": 9002,
-    "alarm_class_names": ["person"]
-  }
+    "anchor": {
+        "large": [
+            116,
+            90,
+            156,
+            198,
+            373,
+            326
+        ],
+        "medium": [
+            30,
+            61,
+            62,
+            45,
+            59,
+            119
+        ],
+        "small": [
+            10,
+            13,
+            16,
+            30,
+            33,
+            23
+        ]
+    },
+    "detection": {
+        "box_threshold": 0.25,
+        "class_num": 80,
+        "nms_threshold": 0.45
+    },
+    "model": {
+        "input_height": 640,
+        "input_width": 640,
+        "label_file": "coco_80_labels_list.txt",
+        "path": "./model/RK3588/yolov5s-640-640.rknn"
+    },
+    "runtime": {
+        "thread_num": 3
+    },
+    "websocket": {
+        "alarm_class_names": [
+            "person"
+        ],
+        "alarm_screenshot_dir": "/home/ztl/dltt/code/test/output",
+        "host": "0.0.0.0",
+        "port": 9002
+    }
 }
