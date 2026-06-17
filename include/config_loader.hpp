@@ -19,6 +19,20 @@
 
 using json = nlohmann::json;
 
+/* 单个模型配置（级联场景） */
+struct ModelConfig
+{
+    std::string name;
+    std::string path;
+    std::string type = "yolov5";     // "yolov5" | "yolo11"
+    int input_width = 640;
+    int input_height = 640;
+    int thread_num = 3;
+    bool draw_result = true;
+    std::string roi_from;             // 上一 stage 名称（空表示不使用 ROI）
+    std::vector<int> roi_class_ids;   // 只对这些类裁剪 ROI
+};
+
 /* 运行时配置结构体 */
 struct AppConfig
 {

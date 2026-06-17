@@ -44,8 +44,10 @@ include_directories(${CMAKE_SOURCE_DIR}/src)
 # ---- Source files ----
 set(COMMON_SOURCES
     src/postprocess.cpp
+    src/postprocess_yolo11.cpp
     src/preprocess.cpp
     src/rkYolov5s.cpp
+    src/engine/YOLO11Engine.cpp
 )
 
 set(QT_SOURCES
