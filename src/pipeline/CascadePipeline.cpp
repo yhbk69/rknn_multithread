@@ -135,12 +135,10 @@ int CascadePipeline::get(cv::Mat &output)
             }
 
             int n_rois = (int)rois.size();
-            {
-                std::lock_guard<std::mutex> lk(roi_mtx_);
-                roi_counts_.push(n_rois);
-            }
 
-            /* 裁剪 + resize + 送入 stage */
+            /* 裁剪 + resize + 送入 stage，同时记录 ROI 偏移 */
+            int actually_put = 0;
+            std::vector<std::pair<int,int>> roi_offsets;
             for (auto &roi : rois) {
                 int x1 = std::max(0, roi.box.left);
                 int y1 = std::max(0, roi.box.top);
@@ -154,6 +152,12 @@ int CascadePipeline::get(cv::Mat &output)
                 cv::Mat resized;
                 cv::resize(crop, resized, cv::Size(stage->input_w, stage->input_h));
                 stage->put(resized);
+                roi_offsets.push_back({x1, y1});
+                actually_put++;
+            }
+            {
+                std::lock_guard<std::mutex> lk(roi_mtx_);
+                roi_counts_.push(actually_put);
             }
 
             /* 收集结果 */
@@ -168,7 +172,7 @@ int CascadePipeline::get(cv::Mat &output)
             merged.count = 0;
 
             /* 保留非 ROI_class 结果 */
-            if (n_rois > 0 && !stage->roi_class_names.empty()) {
+            if (actually_put > 0 && !stage->roi_class_names.empty()) {
                 for (int i = 0; i < src_detect.count && merged.count < OBJ_NUMB_MAX_SIZE; i++) {
                     bool is_roi = false;
                     for (const auto &cls : stage->roi_class_names) {
@@ -177,7 +181,7 @@ int CascadePipeline::get(cv::Mat &output)
                     if (!is_roi)
                         merged.results[merged.count++] = src_detect.results[i];
                 }
-            } else if (n_rois == 0) {
+            } else if (actually_put == 0) {
                 merged = src_detect;
             }
 
@@ -191,17 +195,19 @@ int CascadePipeline::get(cv::Mat &output)
                     merged.results[merged.count++] = stage_detect.results[j];
 
                 if (stage_out.data && stage->draw_result) {
+                    int roi_ox = (i < (int)roi_offsets.size()) ? roi_offsets[i].first : 0;
+                    int roi_oy = (i < (int)roi_offsets.size()) ? roi_offsets[i].second : 0;
                     char text[256];
                     for (int j = 0; j < stage_detect.count; j++) {
                         auto *det = &stage_detect.results[j];
                         snprintf(text, sizeof(text), "[%s] %s %.1f%%",
                                  stage->name.c_str(), det->name, det->prop * 100);
                         cv::rectangle(current_frame,
-                                      cv::Point(det->box.left, det->box.top),
-                                      cv::Point(det->box.right, det->box.bottom),
+                                      cv::Point(det->box.left + roi_ox, det->box.top + roi_oy),
+                                      cv::Point(det->box.right + roi_ox, det->box.bottom + roi_oy),
                                       cv::Scalar(0, 255, 0), 2);
                         cv::putText(current_frame, text,
-                                    cv::Point(det->box.left, det->box.top - 5),
+                                    cv::Point(det->box.left + roi_ox, det->box.top + roi_oy - 5),
                                     cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 255, 0));
                     }
                 }

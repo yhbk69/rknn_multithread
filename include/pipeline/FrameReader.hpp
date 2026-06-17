@@ -12,10 +12,13 @@ public:
         : video_path_(video_path), reconnect_delay_ms_(reconnect_delay_ms) {}
 
     bool open() {
-        if (video_path_.length() == 1 && video_path_[0] >= '0' && video_path_[0] <= '9')
-            capture_.open((int)(video_path_[0] - '0'));
-        else
+        char *end;
+        long id = strtol(video_path_.c_str(), &end, 10);
+        if (end != video_path_.c_str() && *end == '\0' && id >= 0) {
+            capture_.open((int)id);
+        } else {
             capture_.open(video_path_);
+        }
         return capture_.isOpened();
     }
 

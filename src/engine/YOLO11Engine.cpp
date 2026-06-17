@@ -78,7 +78,13 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     case 2: core_mask = RKNN_NPU_CORE_2; break;
     default: core_mask = RKNN_NPU_CORE_AUTO; break;
     }
-    rknn_set_core_mask(ctx, core_mask);
+    ret = rknn_set_core_mask(ctx, core_mask);
+    if (ret < 0) {
+        printf("[YOLO11] rknn_set_core_mask failed ret=%d\n", ret);
+        ::rknn_destroy(ctx);
+        free(model_data); model_data = nullptr;
+        return -1;
+    }
 
     /* 查询输入输出 */
     rknn_query(ctx, RKNN_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
@@ -171,20 +177,30 @@ cv::Mat YOLO11Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 
     rknn_inputs_set(ctx, io_num.n_input, inputs);
 
-    /* 推理 + 获取输出 */
-    rknn_output outputs[io_num.n_output];
-    memset(outputs, 0, sizeof(outputs));
+    /* 推理 + 获取输出（带重试） */
+    std::vector<rknn_output> outputs(io_num.n_output);
+    memset(outputs.data(), 0, outputs.size() * sizeof(rknn_output));
     for (int i = 0; i < io_num.n_output; i++)
         outputs[i].want_float = 0;
 
-    ret = rknn_run(ctx, NULL);
-    if (ret < 0) {
-        fprintf(stderr, "[YOLO11] rknn_run failed\n");
-        return orig_img;
+    int max_retry = 3;
+    bool infer_ok = false;
+    for (int retry = 0; retry < max_retry; retry++) {
+        ret = rknn_run(ctx, NULL);
+        if (ret < 0) {
+            fprintf(stderr, "[YOLO11] rknn_run failed (retry %d/%d)\n", retry + 1, max_retry);
+            continue;
+        }
+        ret = rknn_outputs_get(ctx, io_num.n_output, outputs.data(), NULL);
+        if (ret < 0) {
+            fprintf(stderr, "[YOLO11] rknn_outputs_get failed (retry %d/%d)\n", retry + 1, max_retry);
+            continue;
+        }
+        infer_ok = true;
+        break;
     }
-    ret = rknn_outputs_get(ctx, io_num.n_output, outputs, NULL);
-    if (ret < 0) {
-        fprintf(stderr, "[YOLO11] rknn_outputs_get failed\n");
+    if (!infer_ok) {
+        fprintf(stderr, "[YOLO11] inference failed after %d retries\n", max_retry);
         return orig_img;
     }
 
@@ -212,7 +228,7 @@ cv::Mat YOLO11Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
         last_detect_result_ = detect_result;
     }
 
-    rknn_outputs_release(ctx, io_num.n_output, outputs);
+    rknn_outputs_release(ctx, io_num.n_output, outputs.data());
     return orig_img;
 }
 

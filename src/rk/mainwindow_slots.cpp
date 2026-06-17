@@ -408,11 +408,15 @@ void MainWindow::onConfigFileChanged(const QString &path) {
     conf_slider_->setValue((int)(conf_threshold_ * 100));
     nms_slider_->setValue((int)(nms_threshold_ * 100));
     updateThresholdLabels();
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (detect_threads_[i])
+            detect_threads_[i]->setThresholds(conf_threshold_, nms_threshold_);
+    }
     config_watcher_->removePath(QFileInfo("config.json").absoluteFilePath());
     if (ws_server_) {
-        WebSocketConfig wscfg;
+        WebSocketConfig wscfg = ws_server_->config();
         wscfg.alarm_screenshot_dir = cfg.alarm_screenshot_dir;
-        ws_server_->init(wscfg);
+        ws_server_->updateConfig(wscfg);
     }
     config_watcher_->addPath(QFileInfo("config.json").absoluteFilePath());
 }

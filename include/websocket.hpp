@@ -224,6 +224,7 @@ private:
     mutable QMutex fences_mtx_;
 
     std::map<std::string, long long> last_alarm_time_;  // 速率限制：每类别最后报警时间
+    mutable QMutex alarm_rate_mtx_;                     // 保护 last_alarm_time_ 的互斥锁
 
     int alarm_counter_ = 0;  // 报警计数器（用于生成 alarm_id）
 };

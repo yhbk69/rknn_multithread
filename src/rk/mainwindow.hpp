@@ -209,7 +209,8 @@ protected:
             QThread::msleep(1);
         }
 
-        while (running_.load()) {
+        /* 排空 pipeline 中剩余的推理结果 */
+        while (true) {
             cv::Mat img;
             if (pipeline->get(img) != 0) break;
             emit frameReady(renderer.toQImage(img), stats.getCurrentFps());

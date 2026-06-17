@@ -19,6 +19,25 @@
 #include <QJsonArray>
 #include <QHostAddress>
 #include <cstdio>
+#include <errno.h>
+
+/* 递归创建目录（类似 mkdir -p） */
+static void mkdirs(const std::string &path, mode_t mode) {
+    std::string current;
+    for (char c : path) {
+        current += c;
+        if (c == '/' || c == '\\') {
+            if (!current.empty() && current.back() != ':') {
+                struct stat st;
+                if (stat(current.c_str(), &st) != 0)
+                    mkdir(current.c_str(), mode);
+            }
+        }
+    }
+    struct stat st;
+    if (stat(current.c_str(), &st) != 0)
+        mkdir(current.c_str(), mode);
+}
 
 /* ============================================================
  * 构造 / 析构
@@ -42,6 +61,12 @@ int WebSocket::init(const WebSocketConfig &config)
 {
     QMutexLocker lock(&config_mtx_);
     config_ = config;
+
+    if (ws_server_) {
+        ws_server_->close();
+        ws_server_->deleteLater();
+        ws_server_ = nullptr;
+    }
 
     ws_server_ = new QWebSocketServer(
         QStringLiteral("YOLO Detection Server"),
@@ -183,10 +208,13 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
             continue;
 
         /* 速率限制：同一类别 1 秒内最多报警 1 次 */
-        auto it = last_alarm_time_.find(name);
-        if (it != last_alarm_time_.end() && (now_ms - it->second) < 1000)
-            continue;
-        last_alarm_time_[name] = now_ms;
+        {
+            QMutexLocker rateLock(&alarm_rate_mtx_);
+            auto it = last_alarm_time_.find(name);
+            if (it != last_alarm_time_.end() && (now_ms - it->second) < 1000)
+                continue;
+            last_alarm_time_[name] = now_ms;
+        }
 
         /* 构造报警消息 */
         QString alarmId = generateAlarmId();
@@ -198,6 +226,23 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
         data["timestamp"] = static_cast<qint64>(now_ms);
         data["video_url"] = "";
         data["image_url"] = "";
+
+        /* 保存报警截图（广播前，确保 image_url 可用） */
+        if (!frame.empty() && !config_.alarm_screenshot_dir.empty()) {
+            char screenshot_path[512];
+            snprintf(screenshot_path, sizeof(screenshot_path), "%s/alarm_%s_frame%d_%lld.jpg",
+                     config_.alarm_screenshot_dir.c_str(),
+                     det.name, frame_id, now_ms);
+            /* 确保目录存在 */
+            std::string dir = config_.alarm_screenshot_dir;
+            struct stat st;
+            if (stat(dir.c_str(), &st) != 0) {
+                mkdirs(dir, 0755);
+            }
+            cv::imwrite(screenshot_path, frame);
+            data["image_url"] = screenshot_path;
+            printf("[WebSocket] Screenshot saved: %s\n", screenshot_path);
+        }
 
         QJsonObject msg;
         msg["type"] = "alarm";
@@ -214,22 +259,6 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
                 if (client->isValid())
                     client->sendTextMessage(json);
             }
-        }
-
-        /* 保存报警截图 */
-        if (!frame.empty() && !config_.alarm_screenshot_dir.empty()) {
-            char screenshot_path[512];
-            snprintf(screenshot_path, sizeof(screenshot_path), "%s/alarm_%s_frame%d_%lld.jpg",
-                     config_.alarm_screenshot_dir.c_str(),
-                     det.name, frame_id, now_ms);
-            /* 确保目录存在 */
-            std::string dir = config_.alarm_screenshot_dir;
-            if (access(dir.c_str(), F_OK) != 0) {
-                mkdir(dir.c_str(), 0755);
-            }
-            cv::imwrite(screenshot_path, frame);
-            data["image_url"] = screenshot_path;
-            printf("[WebSocket] Screenshot saved: %s\n", screenshot_path);
         }
 
         alarm_count++;
