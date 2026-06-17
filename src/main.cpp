@@ -10,6 +10,7 @@
 #include "rknnPool.hpp"
 #include "config_loader.hpp"
 #include "postprocess.h"
+#include "pipeline/CascadePipeline.hpp"
 
 int main(int argc, char **argv)
 {
@@ -35,11 +36,17 @@ int main(int argc, char **argv)
     // 初始化标签路径（供 postprocess 使用）
     initLabelPath(model_name);
 
-    // 初始化RKNN线程池
-    rknnPool<YOLOv5Engine, cv::Mat, cv::Mat> testPool(model_name, config.thread_num);
-    if (testPool.init() != 0)
+    // 初始化级联流水线
+    ModelConfig mc;
+    mc.path = model_name;
+    mc.input_width = config.input_width;
+    mc.input_height = config.input_height;
+    mc.thread_num = config.thread_num;
+    mc.type = "yolov5";
+    CascadePipeline pipeline;
+    if (pipeline.init({mc}) != 0)
     {
-        printf("rknnPool init fail!\n");
+        printf("CascadePipeline init fail!\n");
         return -1;
     }
 
@@ -79,15 +86,15 @@ int main(int argc, char **argv)
         if (capture.read(img) == false)
             break;
 
-        // 将图像放入线程池进行异步推理
+        // 将图像放入流水线进行异步推理
         // put()是非阻塞的，会立即返回，推理在后台线程中进行
-        if (testPool.put(img) != 0)
+        if (pipeline.put(img) != 0)
             break;
 
         // 等待推理结果
         // 前threadNum帧不需要等待，因为线程池还在填充中
         // get()是阻塞的，会等待直到对应的推理完成
-        if (frames >= config.thread_num && testPool.get(img) != 0)
+        if (frames >= config.thread_num && pipeline.get(img) != 0)
             break;
 
         // 每30帧计算一次实时帧率
@@ -112,11 +119,11 @@ int main(int argc, char **argv)
         frames++;
     }
 
-    // 清空线程池: 获取所有剩余的推理结果
+    // 清空流水线: 获取所有剩余的推理结果
     while (true)
     {
         cv::Mat img;
-        if (testPool.get(img) != 0)
+        if (pipeline.get(img) != 0)
             break;
         cv::imshow("Camera FPS", img);
         if (cv::waitKey(1) == 'q')

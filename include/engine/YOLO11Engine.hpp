@@ -46,8 +46,9 @@ public:
     int getInputHeight() const override { return height; }
     void setThresholds(float conf, float nms) override;
 
-    // ---- rknn 特有 ----
-    int rknn_init();
+    // ---- rknn 特有（与 YOLOv5Engine 签名一致，供 rknnPool 调用） ----
+    int rknn_init(rknn_context *ctx_in = nullptr, bool share_weight = false, int core_num = -1);
+    rknn_context *get_pctx() { return &ctx; }
     detect_result_group_t getLastDetectResult() const {
         std::lock_guard<std::mutex> lock(mtx);
         return last_detect_result_;

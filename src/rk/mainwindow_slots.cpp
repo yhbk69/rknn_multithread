@@ -162,6 +162,7 @@ void MainWindow::onStartDetection() {
 }
 
 void MainWindow::onStopDetection() {
+    npu_usage_bar_->setValue(0);
     for (int i = 0; i < MAX_CHANNELS; i++) {
         if (detect_threads_[i]) {
             detect_threads_[i]->stop();
@@ -260,6 +261,7 @@ void MainWindow::onDetectFinished(int ch) {
     }
 
     if (all_done) {
+        npu_usage_bar_->setValue(0);
         enableControls(false);
         model_status_label_->setText("已完成");
         model_status_label_->setStyleSheet("color: #8a9bb0; font-weight: bold;");

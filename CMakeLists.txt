@@ -48,6 +48,7 @@ set(COMMON_SOURCES
     src/preprocess.cpp
     src/rkYolov5s.cpp
     src/engine/YOLO11Engine.cpp
+    src/pipeline/CascadePipeline.cpp
 )
 
 set(QT_SOURCES

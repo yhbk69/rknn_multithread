@@ -37,10 +37,10 @@ YOLO11Engine::YOLO11Engine(const std::string &model_path)
 
 int YOLO11Engine::init()
 {
-    return rknn_init();
+    return rknn_init(nullptr, false, -1);
 }
 
-int YOLO11Engine::rknn_init()
+int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_num)
 {
     printf("[YOLO11] Loading model...\n");
 
@@ -58,7 +58,12 @@ int YOLO11Engine::rknn_init()
         return -1;
     }
 
-    ret = ::rknn_init(&ctx, model_data, model_data_size, 0, NULL);
+    /* 支持权重共享（供 rknnPool 调用） */
+    if (share_weight && ctx_in) {
+        ret = rknn_dup_context(ctx_in, &ctx);
+    } else {
+        ret = ::rknn_init(&ctx, model_data, model_data_size, 0, NULL);
+    }
     if (ret < 0) {
         printf("[YOLO11] rknn_init failed ret=%d\n", ret);
         free(model_data); model_data = nullptr;
@@ -67,10 +72,11 @@ int YOLO11Engine::rknn_init()
 
     /* NPU 核心绑定 */
     rknn_core_mask core_mask;
-    switch (get_core_num()) {
+    switch (core_num) {
     case 0: core_mask = RKNN_NPU_CORE_0; break;
     case 1: core_mask = RKNN_NPU_CORE_1; break;
     case 2: core_mask = RKNN_NPU_CORE_2; break;
+    default: core_mask = RKNN_NPU_CORE_AUTO; break;
     }
     rknn_set_core_mask(ctx, core_mask);
 

@@ -30,7 +30,7 @@ struct ModelConfig
     int thread_num = 3;
     bool draw_result = true;
     std::string roi_from;             // 上一 stage 名称（空表示不使用 ROI）
-    std::vector<int> roi_class_ids;   // 只对这些类裁剪 ROI
+    std::vector<std::string> roi_class_names; // 只对这些类名裁剪 ROI（如 ["person"]）
 };
 
 /* 运行时配置结构体 */
@@ -56,6 +56,9 @@ struct AppConfig
     std::vector<std::string> alarm_class_names;
 
     std::string label_path;
+
+    std::vector<ModelConfig> models;   // 多模型级联配置
+    bool is_cascade = false;          // 是否使用级联模式
 
     AppConfig()
         : model_path("./model/RK3588/yolov5s-640-640.rknn"),
@@ -127,7 +130,32 @@ inline AppConfig load_config(const char* config_path = DEFAULT_CONFIG_PATH, bool
     }
     free(buf);
 
-    if (j.contains("model")) {
+    if (j.contains("models") && j["models"].is_array() && j["models"].size() > 0) {
+        /* 新级联格式：多模型数组 */
+        config.is_cascade = true;
+        for (const auto& m : j["models"]) {
+            ModelConfig mc;
+            if (m.contains("name"))        mc.name = m["name"].get<std::string>();
+            if (m.contains("path"))        mc.path = m["path"].get<std::string>();
+            if (m.contains("type"))        mc.type = m["type"].get<std::string>();
+            if (m.contains("input_width")) mc.input_width = m["input_width"].get<int>();
+            if (m.contains("input_height"))mc.input_height = m["input_height"].get<int>();
+            if (m.contains("thread_num"))  mc.thread_num = m["thread_num"].get<int>();
+            if (m.contains("draw_result")) mc.draw_result = m["draw_result"].get<bool>();
+            if (m.contains("roi_from"))    mc.roi_from = m["roi_from"].get<std::string>();
+            if (m.contains("roi_class_names") && m["roi_class_names"].is_array()) {
+                for (const auto& c : m["roi_class_names"])
+                    mc.roi_class_names.push_back(c.get<std::string>());
+            }
+            config.models.push_back(mc);
+        }
+        /* 级联模式下，使用第一个模型作为主模型参数（兼容旧代码） */
+        config.model_path  = config.models[0].path;
+        config.input_width = config.models[0].input_width;
+        config.input_height = config.models[0].input_height;
+        config.thread_num  = config.models[0].thread_num;
+    } else if (j.contains("model")) {
+        /* 旧格式：单模型 */
         const auto& m = j["model"];
         if (m.contains("path"))        config.model_path = m["path"].get<std::string>();
         if (m.contains("label_file"))  config.label_file = m["label_file"].get<std::string>();

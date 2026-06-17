@@ -56,6 +56,7 @@
 #include "pipeline/FrameReader.hpp"
 #include "pipeline/StatsCollector.hpp"
 #include "pipeline/ResultRenderer.hpp"
+#include "pipeline/CascadePipeline.hpp"
 
 static constexpr int MAX_CHANNELS = 4;
 
@@ -69,7 +70,20 @@ public:
                  int thread_num = 3, float conf_threshold = 0.25f, float nms_threshold = 0.45f)
         : channel_id_(channel_id), model_path_(model_path), video_path_(video_path),
           thread_num_(thread_num), conf_threshold_(conf_threshold), nms_threshold_(nms_threshold),
-          running_(true) {}
+          running_(true) {
+        /* 构造单模型 ModelConfig 用于 CascadePipeline */
+        single_cfg_.path = model_path;
+        single_cfg_.input_width = 640;
+        single_cfg_.input_height = 640;
+        single_cfg_.thread_num = thread_num;
+        single_cfg_.type = "yolov5";
+        single_cfg_.draw_result = true;
+    }
+
+    void setCascadeModels(const std::vector<ModelConfig> &models) {
+        cascade_models_ = models;
+        use_cascade_ = true;
+    }
 
     void stop() { running_.store(false); }
     void pause() { paused_.store(true); }
@@ -80,7 +94,7 @@ public:
     void setThresholds(float conf, float nms) {
         conf_threshold_ = conf;
         nms_threshold_ = nms;
-        // pool is local to run(), thresholds applied at next detection
+        // pipeline is local to run(), thresholds applied at next detection
     }
     void setWebSocket(std::weak_ptr<WebSocket> ws) { ws_ = ws; }
     void setRoi(const QRect &roi) { roi_rect_ = roi; roi_enabled_ = !roi.isNull(); }
@@ -97,13 +111,19 @@ signals:
 
 protected:
     void run() override {
-        auto pool = std::make_unique<rknnPool<YOLOv5Engine, cv::Mat, cv::Mat>>(model_path_.c_str(), thread_num_, channel_id_);
-        if (pool->init() != 0) {
-            emit error(QString("[Ch%1] rknnPool init failed!").arg(channel_id_));
+        /* 初始化流水线：单模型（rknnPool 兼容）或级联模式 */
+        auto pipeline = std::make_unique<CascadePipeline>();
+        std::vector<ModelConfig> model_configs;
+        if (use_cascade_)
+            model_configs = cascade_models_;
+        else
+            model_configs.push_back(single_cfg_);
+        if (pipeline->init(model_configs, channel_id_) != 0) {
+            emit error(QString("[Ch%1] CascadePipeline init failed!").arg(channel_id_));
             emit finished();
             return;
         }
-        pool->set_thresholds(conf_threshold_, nms_threshold_);
+        pipeline->set_thresholds(conf_threshold_, nms_threshold_);
 
         FrameReader reader(video_path_);
         if (!reader.open()) {
@@ -146,11 +166,11 @@ protected:
                 detect_img = img;
             }
 
-            if (pool->put(detect_img) != 0) break;
-            if (frames >= thread_num_ && pool->get(detect_img) != 0) break;
+            if (pipeline->put(detect_img) != 0) break;
+            if (frames >= thread_num_ && pipeline->get(detect_img) != 0) break;
 
             if (frames >= thread_num_) {
-                detect_result_group_t result = pool->getLastDetectResult();
+                detect_result_group_t result = pipeline->getLastDetectResult();
 
                 if (roi_enabled_ && !roi_rect_.isNull()) {
                     for (int i = 0; i < result.count; i++) {
@@ -191,7 +211,7 @@ protected:
 
         while (running_.load()) {
             cv::Mat img;
-            if (pool->get(img) != 0) break;
+            if (pipeline->get(img) != 0) break;
             emit frameReady(renderer.toQImage(img), stats.getCurrentFps());
         }
 
@@ -215,6 +235,9 @@ private:
     std::weak_ptr<WebSocket> ws_;
     QRect roi_rect_;
     bool roi_enabled_ = false;
+    ModelConfig single_cfg_;
+    bool use_cascade_ = false;
+    std::vector<ModelConfig> cascade_models_;
 };
 
 // ============================================================
