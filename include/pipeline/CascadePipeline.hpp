@@ -19,17 +19,37 @@
 /*
  * CascadePipeline — 多模型级联检测流水线
  *
- * 多 stage 串联：Stage 0 检测出目标后，按 roi_class_ids 筛选，
- * 从原图裁剪 ROI 送入 Stage 1 进行二次检测。
- * 每个 stage 独立 rknnPool，通过有界队列串联。
+ * 支持两种模式：
+ *   1. 单模型模式：等价于 rknnPool，直接推理返回
+ *   2. 级联模式：Stage 0 检测 → ROI 裁剪 → Stage 1 二次检测
+ *
+ * 线程安全：put() 和 get() 必须从同一线程调用（单生产者单消费者）
+ *
+ * 数据流：
+ *   put(frame) → [Stage 0 推理] → get() → [ROI 裁剪 + Stage 1 推理] → 输出
  */
 class CascadePipeline {
 public:
     CascadePipeline();
     ~CascadePipeline();
 
+    /*
+     * 初始化流水线
+     * @param models     模型配置列表（按 stage 顺序）
+     * @param channel_id 通道编号，用于 NPU 核心分配
+     */
     int init(const std::vector<ModelConfig> &models, int channel_id = 0);
+
+    /*
+     * 提交一帧到流水线（非阻塞）
+     * 内部会 clone 原图存入 orig_frames_ 队列，与 get() 一一对应
+     */
     int put(const cv::Mat &frame);
+
+    /*
+     * 获取推理结果（阻塞，等待 NPU 完成）
+     * 内部自动处理 ROI 裁剪和多 stage 串联
+     */
     int get(cv::Mat &output);
 
     detect_result_group_t getLastDetectResult() const {

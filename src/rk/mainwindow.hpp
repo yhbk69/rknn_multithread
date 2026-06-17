@@ -60,8 +60,26 @@
 
 static constexpr int MAX_CHANNELS = 4;
 
+/* 单帧检测结果（用于批量传递，避免每个检测框发射一次信号） */
+struct FrameDetections {
+    int frame_id = 0;
+    struct Det {
+        QString class_name;
+        float confidence = 0;
+        int left = 0, top = 0, right = 0, bottom = 0;
+    };
+    QVector<Det> detections;
+};
+
 // ============================================================
 // 检测工作线程（每路摄像头一个实例）
+//
+// 职责：读取视频帧 → 送入 CascadePipeline 推理 → 将结果传递给 GUI 线程
+//
+// 性能优化（Phase 1）：
+//   P1-1: 移除 QThread::msleep(1)，避免人为阻塞
+//   P1-2: 传递 cv::Mat 而非 QImage，GUI 线程按需转换，避免工作线程做 BGR→RGB + copy
+//   P1-3: 每帧只发射一个 batch 信号，替代每个检测框一个信号
 // ============================================================
 class DetectThread : public QThread {
     Q_OBJECT
@@ -94,7 +112,6 @@ public:
     void setThresholds(float conf, float nms) {
         conf_threshold_ = conf;
         nms_threshold_ = nms;
-        // pipeline is local to run(), thresholds applied at next detection
     }
     void setWebSocket(std::weak_ptr<WebSocket> ws) { ws_ = ws; }
     void setRoi(const QRect &roi) { roi_rect_ = roi; roi_enabled_ = !roi.isNull(); }
@@ -102,12 +119,13 @@ public:
     int channelId() const { return channel_id_; }
 
 signals:
+    /* 传递 QImage 给 GUI 线程显示 */
     void frameReady(const QImage& image, double fps);
     void statsUpdated(int framesProcessed, double avgFps, double inferenceTime);
     void finished();
     void error(const QString& msg);
-    void detectionResult(int frameId, const QString& className, float confidence,
-                         int left, int top, int right, int bottom);
+    /* P1-3: 每帧一次批量检测结果信号，替代逐框发射 */
+    void detectionBatch(int frameId, const QVector<FrameDetections::Det>& dets);
 
 protected:
     void run() override {
@@ -125,6 +143,7 @@ protected:
         }
         pipeline->set_thresholds(conf_threshold_, nms_threshold_);
 
+        /* 打开视频源（文件/摄像头/RTSP） */
         FrameReader reader(video_path_);
         if (!reader.open()) {
             emit error(QString("[Ch%1] Cannot open video: %2").arg(channel_id_).arg(QString::fromStdString(video_path_)));
@@ -139,12 +158,14 @@ protected:
         int frames = 0;
 
         while (running_.load()) {
+            /* 暂停状态下等待恢复或单步触发 */
             while (paused_.load() && running_.load()) {
                 if (step_once_.exchange(false)) break;
                 QThread::msleep(50);
             }
             if (!running_.load()) break;
 
+            /* 1. 读取一帧 */
             cv::Mat img;
             if (!reader.read(img)) {
                 emit error(QString("[Ch%1] Failed to read frame").arg(channel_id_));
@@ -153,6 +174,7 @@ protected:
 
             long long infer_start = stats.elapsedMs();
 
+            /* 2. ROI 裁剪（如果启用了 ROI 模式） */
             int roi_x = 0, roi_y = 0;
             cv::Mat detect_img;
             if (roi_enabled_ && !roi_rect_.isNull()) {
@@ -166,12 +188,17 @@ protected:
                 detect_img = img;
             }
 
+            /* 3. 送入推理流水线（非阻塞） */
             if (pipeline->put(detect_img) != 0) break;
+
+            /* 4. 等待推理结果（阻塞，直到 NPU 完成） */
             if (frames >= thread_num_ && pipeline->get(detect_img) != 0) break;
 
+            /* 5. 处理推理结果（仅在流水线预热完成后） */
             if (frames >= thread_num_) {
                 detect_result_group_t result = pipeline->getLastDetectResult();
 
+                /* 5a. ROI 坐标偏移还原 */
                 if (roi_enabled_ && !roi_rect_.isNull()) {
                     for (int i = 0; i < result.count; i++) {
                         result.results[i].box.left += roi_x;
@@ -183,30 +210,38 @@ protected:
                                           cv::Range(roi_x, roi_x + detect_img.cols)));
                 }
 
+                /* 5b. WebSocket 报警检查（仅在启用且有报警类别时执行） */
                 if (auto ws = ws_.lock()) {
                     if (ws->isAlarmEnabled())
                         ws->checkAndAlarm(&result, frames, detect_img);
                 }
 
+                /* 5c. P1-3: 批量收集检测结果，每帧只发射一次信号 */
+                QVector<FrameDetections::Det> dets;
                 for (int i = 0; i < result.count; i++) {
                     const detect_result_t &det = result.results[i];
-                    emit detectionResult(frames, QString::fromUtf8(det.name), det.prop,
-                                         det.box.left, det.box.top, det.box.right, det.box.bottom);
+                    dets.append({QString::fromUtf8(det.name), det.prop,
+                                 det.box.left, det.box.top, det.box.right, det.box.bottom});
                 }
+                if (!dets.isEmpty())
+                    emit detectionBatch(frames, dets);
             }
 
+            /* 6. 绘制 FPS 文字到帧上 */
             cv::Mat& out_frame = (frames >= thread_num_) ? detect_img : img;
             double infer_time = (double)(stats.elapsedMs() - infer_start);
             double current_fps = stats.updateFps(frames);
-
             renderer.drawFps(out_frame, current_fps);
+
+            /* 7. 传递 QImage 给 GUI 线程（BGR→RGB 转换 + 深拷贝） */
             emit frameReady(renderer.toQImage(out_frame), current_fps);
 
+            /* 8. 定期发射统计信息（每 5 帧一次） */
             if (frames % 5 == 0)
                 emit statsUpdated(frames, current_fps, infer_time);
 
             frames++;
-            QThread::msleep(1);
+            /* P1-1: 移除 msleep(1)，不再人为阻塞，pipeline.get() 已提供同步 */
         }
 
         /* 排空 pipeline 中剩余的推理结果 */
@@ -286,6 +321,8 @@ private slots:
     void onStepFrame();
     void onScreenshot();
     void onExportResults();
+    /* P1-3: 接收批量检测结果（每帧一次） */
+    void onDetectionBatch(int ch, int frameId, const QVector<FrameDetections::Det>& dets);
 
     // 缩放
     void onZoomIn(int ch);

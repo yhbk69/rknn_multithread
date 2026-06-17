@@ -142,9 +142,10 @@ void MainWindow::onStartDetection() {
             [this, ch]() { onDetectFinished(ch); });
         connect(detect_threads_[i], &DetectThread::error, this,
             [this, ch](const QString& msg) { onDetectError(ch, msg); });
-        connect(detect_threads_[i], &DetectThread::detectionResult, this,
-            [this, ch](int frameId, const QString &cls, float conf, int l, int t, int r, int b) {
-                export_records_.push_back({ch, frameId, cls.toStdString(), conf, l, t, r, b});
+        /* P1-3: 连接新的 detectionBatch 信号（每帧一次批量结果） */
+        connect(detect_threads_[i], &DetectThread::detectionBatch, this,
+            [this, ch](int frameId, const QVector<FrameDetections::Det>& dets) {
+                onDetectionBatch(ch, frameId, dets);
             });
 
         detect_threads_[i]->start();
@@ -199,7 +200,7 @@ void MainWindow::onStepFrame() {
 }
 
 // ============================================================
-// 帧回调
+// 帧回调（接收 QImage，更新视频显示）
 // ============================================================
 
 void MainWindow::onFrameReady(int ch, const QImage& image, double fps) {
@@ -210,14 +211,14 @@ void MainWindow::onFrameReady(int ch, const QImage& image, double fps) {
     QPixmap pix = QPixmap::fromImage(image);
     cell.pixmap_item->setPixmap(pix);
 
-    // P1-3: fitInView 只在尺寸变化时调用，避免每帧 layout 重算
+    /* fitInView 只在尺寸变化时调用，避免每帧 layout 重算 */
     if (pix.size() != cell.last_pix_size) {
         cell.scene->setSceneRect(pix.rect());
         cell.view->fitInView(cell.pixmap_item, Qt::KeepAspectRatio);
         cell.last_pix_size = pix.size();
     }
 
-    // P1-4: FPS 文本 5Hz 节流（每 200ms 更新一次）
+    /* FPS 文本 5Hz 节流（每 200ms 更新一次） */
     long long now = QDateTime::currentMSecsSinceEpoch();
     if (now - cell.last_fps_text_update >= 200) {
         cell.overlay->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
@@ -276,6 +277,14 @@ void MainWindow::onDetectFinished(int ch) {
 
 void MainWindow::onDetectError(int ch, const QString& msg) {
     log("info", msg);
+}
+
+/* P1-3: 批量检测结果回调（每帧一次，替代逐框发射） */
+void MainWindow::onDetectionBatch(int ch, int frameId, const QVector<FrameDetections::Det>& dets) {
+    for (const auto &d : dets) {
+        export_records_.push_back({ch, frameId, d.class_name.toStdString(),
+                                   d.confidence, d.left, d.top, d.right, d.bottom});
+    }
 }
 
 // ============================================================

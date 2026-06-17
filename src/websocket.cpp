@@ -177,6 +177,8 @@ void WebSocket::sendToClient(QWebSocket *client, const QString &message)
 /* ============================================================
  * checkAndAlarm - 检查检测结果并广播报警
  *
+ * P1-4 优化：无客户端或无报警类别时提前返回，避免不必要的 JSON 构造和锁竞争
+ *
  * 协议格式：
  * {"type":"alarm","data":{"alarm_id":"a_001","alarm_type":"person",
  *  "timestamp":1700000000000,"video_url":"","image_url":""}}
@@ -185,16 +187,29 @@ void WebSocket::sendToClient(QWebSocket *client, const QString &message)
 int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int frame_id,
                              const cv::Mat &frame)
 {
-    if (!ws_server_ || !detect_results)
+    /* 快速跳过：无服务器、无检测结果、无检测框 */
+    if (!ws_server_ || !detect_results || detect_results->count == 0)
         return 0;
+
+    /* P1-4: 无客户端连接时跳过（省去加锁和 JSON 构造开销） */
+    {
+        QMutexLocker clientLock(&clients_mtx_);
+        if (clients_.isEmpty())
+            return 0;
+    }
 
     int alarm_count = 0;
 
+    /* 获取当前时间戳（用于速率限制） */
     struct timeval tv;
     gettimeofday(&tv, nullptr);
     long long now_ms = tv.tv_sec * 1000LL + tv.tv_usec / 1000;
 
     QMutexLocker configLock(&config_mtx_);
+
+    /* P1-4: 无报警类别配置时跳过 */
+    if (config_.alarm_class_names.empty())
+        return 0;
 
     for (int i = 0; i < detect_results->count; i++)
     {

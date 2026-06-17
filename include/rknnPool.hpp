@@ -1,8 +1,22 @@
 /*
- * rknnPool.hpp
- * RKNN 模型线程池管理器的模板类
- * 负责管理多个模型实例和异步推理任务，通过线程池实现并发推理，
- * 并通过轮询方式分配任务到不同模型实例，达到负载均衡的效果。
+ * rknnPool.hpp — RKNN 模型线程池管理器（模板类）
+ *
+ * 功能：管理多个模型实例，通过线程池实现并发推理，轮询分配任务到不同实例
+ *
+ * 核心设计：
+ *   - 每个模型实例绑定一个 NPU 核心（P2-1 按通道固定分配）
+ *   - 第一个实例完整加载模型，后续实例共享权重（rknn_dup_context）
+ *   - put() 非阻塞，get() 阻塞等待推理完成
+ *   - 队列满时丢弃最旧帧，防止 OOM
+ *
+ * 线程安全：
+ *   - put() 和 get() 可从不同线程调用
+ *   - 内部通过 queueMtx 保护任务队列
+ *
+ * 模板参数：
+ *   - rknnModel: 模型类（如 YOLOv5Engine），需提供 infer()、rknn_init()、get_pctx()
+ *   - inputType: 输入类型（通常为 cv::Mat）
+ *   - outputType: 输出类型（通常为 cv::Mat）
  */
 #ifndef RKNNPOOL_H
 #define RKNNPOOL_H
@@ -34,20 +48,29 @@ private:
     static constexpr size_t MAX_QUEUE_SIZE = 16;               // 队列最大容量，超过时丢弃旧帧
 
 protected:
-    int getModelId();  // 轮询获取模型实例 ID，实现负载均衡
+    /* 轮询获取模型实例 ID，通过取模运算实现任务的均匀分配 */
+    int getModelId();
 
 public:
     rknnPool(const std::string &modelPath, int threadNum, int channelId = 0);
-    int init();  // 创建线程池和模型实例，第一个实例完整加载模型，后续实例共享权重
-    // 提交推理任务到线程池（非阻塞）
+
+    /* 创建线程池和模型实例，第一个实例完整加载模型，后续实例共享权重 */
+    int init();
+
+    /* 提交推理任务到线程池（非阻塞），队列满时丢弃最旧帧 */
     int put(const inputType &inputData);
-    // 获取最早的推理结果（阻塞等待）
+
+    /* 获取最早的推理结果（阻塞等待），按 FIFO 顺序返回 */
     int get(outputType &outputData);
-    // 获取最近一次 get() 对应模型的检测结果（线程安全，返回拷贝）
+
+    /* 获取最近一次 get() 对应模型的检测结果（线程安全，返回拷贝） */
     detect_result_group_t getLastDetectResult() const;
-    // 动态设置所有模型实例的阈值
+
+    /* 动态设置所有模型实例的阈值（需 rknnModel 提供 set_thresholds 方法） */
     void set_thresholds(float conf, float nms);
-    ~rknnPool();  // 析构函数：等待所有剩余推理任务完成后释放资源
+
+    /* 析构函数：等待所有剩余推理任务完成后释放资源 */
+    ~rknnPool();
 };
 
 // 构造函数：初始化模型路径、线程数和任务计数器
