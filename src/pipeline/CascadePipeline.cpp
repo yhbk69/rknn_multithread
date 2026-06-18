@@ -161,11 +161,14 @@ int CascadePipeline::get(cv::Mat &output)
             }
 
             /* 收集结果 */
-            int expected;
+            // P0 修复: 初始化 expected 防止未定义行为
+            int expected = 0;
             {
                 std::lock_guard<std::mutex> lk(roi_mtx_);
-                if (roi_counts_.empty()) expected = 0;
-                else { expected = roi_counts_.front(); roi_counts_.pop(); }
+                if (!roi_counts_.empty()) {
+                    expected = roi_counts_.front();
+                    roi_counts_.pop();
+                }
             }
 
             detect_result_group_t merged;

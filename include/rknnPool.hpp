@@ -187,6 +187,8 @@ void rknnPool<rknnModel, inputType, outputType>::set_thresholds(float conf, floa
 template <typename rknnModel, typename inputType, typename outputType>
 rknnPool<rknnModel, inputType, outputType>::~rknnPool()
 {
+    // P0 修复: 添加锁保护，防止与 put() 并发时的竞态条件
+    std::lock_guard<std::mutex> lock(queueMtx);
     while (!futs.empty())
     {
         outputType temp = futs.front().get();

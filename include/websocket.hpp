@@ -37,6 +37,7 @@
 #include <map>
 #include <string>
 #include <set>
+#include <atomic>
 #include <sys/time.h>
 
 #include <opencv2/core.hpp>
@@ -226,7 +227,8 @@ private:
     std::map<std::string, long long> last_alarm_time_;  // 速率限制：每类别最后报警时间
     mutable QMutex alarm_rate_mtx_;                     // 保护 last_alarm_time_ 的互斥锁
 
-    int alarm_counter_ = 0;  // 报警计数器（用于生成 alarm_id）
+    // P0 修复: 使用 atomic 保证多线程安全
+    std::atomic<int> alarm_counter_{0};  // 报警计数器（用于生成 alarm_id）
 };
 
 #endif /* WEBSOCKET_HPP */

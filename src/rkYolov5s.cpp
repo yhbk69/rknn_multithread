@@ -210,6 +210,7 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     // RK3588有3个NPU核心，支持按通道固定分配（P2-1）或全局轮询
     rknn_core_mask core_mask;
     int core_id = (core_num >= 0) ? core_num : get_core_num();
+    // P0 修复: 添加 default 分支防止 core_id >= 3 时未定义行为
     switch (core_id)
     {
     case 0:
@@ -220,6 +221,10 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
         break;
     case 2:
         core_mask = RKNN_NPU_CORE_2;
+        break;
+    default:
+        fprintf(stderr, "[YOLOv5Engine] Invalid core_id: %d, using Core 0\n", core_id);
+        core_mask = RKNN_NPU_CORE_0;
         break;
     }
     ret = rknn_set_core_mask(ctx, core_mask);
