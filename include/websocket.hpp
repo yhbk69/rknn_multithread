@@ -175,6 +175,11 @@ public:
     /* 广播统计数据（定时调用） */
     void broadcastStats(const nlohmann::json& stats);
 
+    /* ---- 模型管理 ---- */
+
+    /* 设置模型管理器（用于 switch_model/get_models） */
+    void setModelManager(std::shared_ptr<class ModelManager> manager) { model_manager_ = manager; }
+
 signals:
     /* 客户端事件 */
     void clientConnected(QWebSocket *client);
@@ -216,6 +221,8 @@ private:
     void handleGetStreams(QWebSocket *client);
     void handleSetFence(QWebSocket *client, const QJsonObject &json);
     void handleGetStats(QWebSocket *client);
+    void handleSwitchModel(QWebSocket *client, const QJsonObject &json);
+    void handleGetModels(QWebSocket *client);
 
     /* 工具 */
     QString generateAlarmId();
@@ -244,6 +251,9 @@ private:
 
     // 统计回调
     StatsCallback stats_callback_;
+
+    // 模型管理器
+    std::shared_ptr<class ModelManager> model_manager_;
 };
 
 #endif /* WEBSOCKET_HPP */

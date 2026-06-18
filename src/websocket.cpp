@@ -24,6 +24,9 @@
 // P1: 使用彩色日志系统
 #include "Logger.hpp"
 
+// P2: 模型管理
+#include "ModelManager.hpp"
+
 /* 递归创建目录（类似 mkdir -p） */
 static void mkdirs(const std::string &path, mode_t mode) {
     std::string current;
@@ -509,6 +512,14 @@ void WebSocket::dispatchMessage(QWebSocket *client, const QJsonObject &json)
     {
         handleGetStats(client);
     }
+    else if (type == "switch_model")
+    {
+        handleSwitchModel(client, json);
+    }
+    else if (type == "get_models")
+    {
+        handleGetModels(client);
+    }
     /*
      * TODO: 用户扩展其他消息类型
      *
@@ -580,6 +591,65 @@ void WebSocket::handleAck(QWebSocket *client, const QJsonObject &json)
     LOG_INFO("[WebSocket]", "ACK from client for alarm: %s",
            alarmId.toUtf8().constData());
     emit alarmAcknowledged(client, alarmId);
+}
+
+/*
+ * {"type":"switch_model","model":"yolo11n"}
+ * ->
+ * {"type":"model_switched","model":"yolo11n","success":true}
+ */
+void WebSocket::handleSwitchModel(QWebSocket *client, const QJsonObject &json)
+{
+    QString modelName = json["model"].toString();
+
+    QJsonObject resp;
+    resp["type"] = "model_switched";
+    resp["model"] = modelName;
+
+    if (!model_manager_) {
+        resp["success"] = false;
+        resp["error"] = "Model manager not initialized";
+        client->sendTextMessage(QString::fromUtf8(
+            QJsonDocument(resp).toJson(QJsonDocument::Compact)));
+        return;
+    }
+
+    bool success = model_manager_->switchModel(modelName.toStdString());
+    resp["success"] = success;
+
+    if (success) {
+        LOG_INFO("[WebSocket]", "Model switched to: %s", modelName.toUtf8().constData());
+    } else {
+        LOG_WARN("[WebSocket]", "Failed to switch model: %s", modelName.toUtf8().constData());
+    }
+
+    client->sendTextMessage(QString::fromUtf8(
+        QJsonDocument(resp).toJson(QJsonDocument::Compact)));
+}
+
+/*
+ * {"type":"get_models"}
+ * ->
+ * {"type":"models_list","data":{"active_model":"yolov5s","models":[...]}}
+ */
+void WebSocket::handleGetModels(QWebSocket *client)
+{
+    QJsonObject resp;
+    resp["type"] = "models_list";
+
+    if (model_manager_) {
+        nlohmann::json j = model_manager_->toJson();
+        resp["data"] = QJsonDocument::fromJson(
+            QByteArray::fromStdString(j.dump())).object();
+    } else {
+        QJsonObject data;
+        data["active_model"] = "";
+        data["models"] = QJsonArray();
+        resp["data"] = data;
+    }
+
+    client->sendTextMessage(QString::fromUtf8(
+        QJsonDocument(resp).toJson(QJsonDocument::Compact)));
 }
 
 /*
