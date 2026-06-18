@@ -7,12 +7,18 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
+// P1: 使用彩色日志系统
+#include "Logger.hpp"
+
 /* ============ 辅助函数（与 rkYolov5s.cpp 共享） ============ */
 
 static unsigned char *load_model(const char *filename, int *model_size)
 {
     FILE *fp = fopen(filename, "rb");
-    if (!fp) { printf("Open file %s failed.\n", filename); return NULL; }
+    if (!fp) {
+        LOG_ERROR("[YOLO11]", "Open file %s failed", filename);
+        return NULL;
+    }
     fseek(fp, 0, SEEK_END);
     int size = ftell(fp);
     unsigned char *data = (unsigned char *)malloc(size);
@@ -42,11 +48,11 @@ int YOLO11Engine::init()
 
 int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_num)
 {
-    printf("[YOLO11] Loading model...\n");
+    LOG_INFO("[YOLO11]", "Loading model...");
 
     /* 初始化后处理 */
     if (post_ctx_.init(model_path.c_str()) < 0) {
-        printf("[YOLO11] Failed to init postprocess\n");
+        LOG_ERROR("[YOLO11]", "Failed to init postprocess");
         return -1;
     }
 
@@ -54,7 +60,7 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     int model_data_size = 0;
     model_data = load_model(model_path.c_str(), &model_data_size);
     if (!model_data) {
-        printf("[YOLO11] Failed to load model\n");
+        LOG_ERROR("[YOLO11]", "Failed to load model");
         return -1;
     }
 
@@ -65,7 +71,7 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
         ret = ::rknn_init(&ctx, model_data, model_data_size, 0, NULL);
     }
     if (ret < 0) {
-        printf("[YOLO11] rknn_init failed ret=%d\n", ret);
+        LOG_ERROR("[YOLO11]", "rknn_init failed ret=%d", ret);
         free(model_data); model_data = nullptr;
         return -1;
     }
@@ -80,7 +86,7 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     }
     ret = rknn_set_core_mask(ctx, core_mask);
     if (ret < 0) {
-        printf("[YOLO11] rknn_set_core_mask failed ret=%d\n", ret);
+        LOG_ERROR("[YOLO11]", "rknn_set_core_mask failed ret=%d", ret);
         ::rknn_destroy(ctx);
         free(model_data); model_data = nullptr;
         return -1;
@@ -88,7 +94,7 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
 
     /* 查询输入输出 */
     rknn_query(ctx, RKNN_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
-    printf("[YOLO11] input num: %d, output num: %d\n", io_num.n_input, io_num.n_output);
+    LOG_INFO("[YOLO11]", "input num: %d, output num: %d", io_num.n_input, io_num.n_output);
 
     input_attrs.resize(io_num.n_input);
     for (int i = 0; i < io_num.n_input; i++) {
@@ -116,7 +122,7 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
         width   = input_attrs[0].dims[2];
         channel = input_attrs[0].dims[3];
     }
-    printf("[YOLO11] model input: %dx%dx%d\n", height, width, channel);
+    LOG_INFO("[YOLO11]", "model input: %dx%dx%d", height, width, channel);
 
     /* 配置输入 */
     memset(inputs, 0, sizeof(inputs));
@@ -188,19 +194,19 @@ cv::Mat YOLO11Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     for (int retry = 0; retry < max_retry; retry++) {
         ret = rknn_run(ctx, NULL);
         if (ret < 0) {
-            fprintf(stderr, "[YOLO11] rknn_run failed (retry %d/%d)\n", retry + 1, max_retry);
+            LOG_ERROR("[YOLO11]", "rknn_run failed (retry %d/%d)", retry + 1, max_retry);
             continue;
         }
         ret = rknn_outputs_get(ctx, io_num.n_output, outputs.data(), NULL);
         if (ret < 0) {
-            fprintf(stderr, "[YOLO11] rknn_outputs_get failed (retry %d/%d)\n", retry + 1, max_retry);
+            LOG_ERROR("[YOLO11]", "rknn_outputs_get failed (retry %d/%d)", retry + 1, max_retry);
             continue;
         }
         infer_ok = true;
         break;
     }
     if (!infer_ok) {
-        fprintf(stderr, "[YOLO11] inference failed after %d retries\n", max_retry);
+        LOG_ERROR("[YOLO11]", "inference failed after %d retries", max_retry);
         return orig_img;
     }
 

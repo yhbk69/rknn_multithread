@@ -14,6 +14,9 @@
 #include "coreNum.hpp"
 #include "rkYolov5s.hpp"
 
+// P1: 使用彩色日志系统
+#include "Logger.hpp"
+
 /**
  * 打印张量属性信息(调试用)
  * 包含张量的维度、形状、数据类型、量化参数等
@@ -51,7 +54,7 @@ static unsigned char *load_data(FILE *fp, size_t ofst, size_t sz)
     ret = fseek(fp, ofst, SEEK_SET);
     if (ret != 0)
     {
-        printf("blob seek failure.\n");
+        LOG_ERROR("[rkYolov5s]", "blob seek failure");
         return NULL;
     }
 
@@ -59,13 +62,13 @@ static unsigned char *load_data(FILE *fp, size_t ofst, size_t sz)
     data = (unsigned char *)malloc(sz);
     if (data == NULL)
     {
-        printf("buffer malloc failure.\n");
+        LOG_ERROR("[rkYolov5s]", "buffer malloc failure");
         return NULL;
     }
     size_t read_bytes = fread(data, 1, sz, fp);
     if (read_bytes != sz)
     {
-        printf("blob read failure: expected %zu, got %zu\n", sz, read_bytes);
+        LOG_ERROR("[rkYolov5s]", "blob read failure: expected %zu, got %zu", sz, read_bytes);
         free(data);
         return NULL;
     }
@@ -86,7 +89,7 @@ static unsigned char *load_model(const char *filename, int *model_size)
     fp = fopen(filename, "rb");
     if (NULL == fp)
     {
-        printf("Open file %s failed.\n", filename);
+        LOG_ERROR("[rkYolov5s]", "Open file %s failed", filename);
         return NULL;
     }
 
@@ -173,12 +176,12 @@ void YOLOv5Engine::setThresholds(float conf, float nms) {
  */
 int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_num)
 {
-    printf("Loading model...\n");
+    LOG_INFO("[YOLOv5Engine]", "Loading model...");
 
     // 初始化后处理上下文（加载标签和 anchor）
     if (post_ctx_.init(model_path.c_str()) < 0)
     {
-        printf("Failed to init postprocess context\n");
+        LOG_ERROR("[YOLOv5Engine]", "Failed to init postprocess context");
         return -1;
     }
 
@@ -187,7 +190,7 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     model_data = load_model(model_path.c_str(), &model_data_size);
     if (model_data == nullptr)
     {
-        printf("Failed to load model: %s\n", model_path.c_str());
+        LOG_ERROR("[YOLOv5Engine]", "Failed to load model: %s", model_path.c_str());
         return -1;
     }
 
@@ -200,7 +203,7 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
 
     if (ret < 0)
     {
-        printf("rknn_init error ret=%d\n", ret);
+        LOG_ERROR("[YOLOv5Engine]", "rknn_init error ret=%d", ret);
         free(model_data);
         model_data = nullptr;
         return -1;
@@ -223,14 +226,14 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
         core_mask = RKNN_NPU_CORE_2;
         break;
     default:
-        fprintf(stderr, "[YOLOv5Engine] Invalid core_id: %d, using Core 0\n", core_id);
+        LOG_ERROR("[YOLOv5Engine]", "Invalid core_id: %d, using Core 0", core_id);
         core_mask = RKNN_NPU_CORE_0;
         break;
     }
     ret = rknn_set_core_mask(ctx, core_mask);
     if (ret < 0)
     {
-        printf("rknn_init core error ret=%d\n", ret);
+        LOG_ERROR("[YOLOv5Engine]", "rknn_init core error ret=%d", ret);
         free(model_data);
         model_data = nullptr;
         return -1;
@@ -241,23 +244,23 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     ret = rknn_query(ctx, RKNN_QUERY_SDK_VERSION, &version, sizeof(rknn_sdk_version));
     if (ret < 0)
     {
-        printf("rknn_init error ret=%d\n", ret);
+        LOG_ERROR("[YOLOv5Engine]", "rknn_init error ret=%d", ret);
         free(model_data);
         model_data = nullptr;
         return -1;
     }
-    printf("sdk version: %s driver version: %s\n", version.api_version, version.drv_version);
+    LOG_INFO("[YOLOv5Engine]", "sdk version: %s driver version: %s", version.api_version, version.drv_version);
 
     // 获取模型的输入输出张量数量
     ret = rknn_query(ctx, RKNN_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
     if (ret < 0)
     {
-        printf("rknn_init error ret=%d\n", ret);
+        LOG_ERROR("[YOLOv5Engine]", "rknn_init error ret=%d", ret);
         free(model_data);
         model_data = nullptr;
         return -1;
     }
-    printf("model input num: %d, output num: %d\n", io_num.n_input, io_num.n_output);
+    LOG_INFO("[YOLOv5Engine]", "model input num: %d, output num: %d", io_num.n_input, io_num.n_output);
 
     // 查询并设置输入张量属性
     input_attrs.resize(io_num.n_input);
@@ -267,7 +270,7 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
         ret = rknn_query(ctx, RKNN_QUERY_INPUT_ATTR, &(input_attrs[i]), sizeof(rknn_tensor_attr));
         if (ret < 0)
         {
-            printf("rknn_init error ret=%d\n", ret);
+            LOG_ERROR("[YOLOv5Engine]", "rknn_init error ret=%d", ret);
             free(model_data);
             model_data = nullptr;
             return -1;
@@ -297,19 +300,19 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     // 支持NCHW和NHWC两种格式
     if (input_attrs[0].fmt == RKNN_TENSOR_NCHW)
     {
-        printf("model is NCHW input fmt\n");
+        LOG_INFO("[YOLOv5Engine]", "model is NCHW input fmt");
         channel = input_attrs[0].dims[1];
         height = input_attrs[0].dims[2];
         width = input_attrs[0].dims[3];
     }
     else
     {
-        printf("model is NHWC input fmt\n");
+        LOG_INFO("[YOLOv5Engine]", "model is NHWC input fmt");
         height = input_attrs[0].dims[1];
         width = input_attrs[0].dims[2];
         channel = input_attrs[0].dims[3];
     }
-    printf("model input height=%d, width=%d, channel=%d\n", height, width, channel);
+    LOG_INFO("[YOLOv5Engine]", "model input height=%d, width=%d, channel=%d", height, width, channel);
 
     // 配置输入张量参数
     memset(inputs, 0, sizeof(inputs));
@@ -393,7 +396,7 @@ cv::Mat YOLOv5Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
     ret = rknn_inputs_set(ctx, io_num.n_input, inputs);
     if (ret < 0)
     {
-        fprintf(stderr, "[YOLOv5Engine] rknn_inputs_set failed, ret=%d\n", ret);
+        LOG_ERROR("[YOLOv5Engine]", "rknn_inputs_set failed, ret=%d", ret);
         return orig_img;
     }
 
@@ -409,14 +412,14 @@ cv::Mat YOLOv5Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
         ret = rknn_run(ctx, NULL);
         if (ret < 0)
         {
-            fprintf(stderr, "[rkYolov5s] rknn_run failed (retry %d/%d), ret=%d\n",
+            LOG_ERROR("[YOLOv5Engine]", "rknn_run failed (retry %d/%d), ret=%d",
                     retry + 1, max_retry, ret);
             continue;
         }
         ret = rknn_outputs_get(ctx, io_num.n_output, outputs, NULL);
         if (ret < 0)
         {
-            fprintf(stderr, "[rkYolov5s] rknn_outputs_get failed (retry %d/%d), ret=%d\n",
+            LOG_ERROR("[YOLOv5Engine]", "rknn_outputs_get failed (retry %d/%d), ret=%d",
                     retry + 1, max_retry, ret);
             continue;
         }
@@ -426,7 +429,7 @@ cv::Mat YOLOv5Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 
     if (!infer_ok)
     {
-        fprintf(stderr, "[rkYolov5s] inference failed after %d retries, skipping frame\n", max_retry);
+        LOG_ERROR("[YOLOv5Engine]", "inference failed after %d retries, skipping frame", max_retry);
         return orig_img;
     }
 
@@ -458,7 +461,7 @@ cv::Mat YOLOv5Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 
     ret = rknn_outputs_release(ctx, io_num.n_output, outputs);
     if (ret < 0)
-        fprintf(stderr, "[rkYolov5s] rknn_outputs_release failed, ret=%d\n", ret);
+        LOG_ERROR("[YOLOv5Engine]", "rknn_outputs_release failed, ret=%d", ret);
 
     return orig_img;
 }

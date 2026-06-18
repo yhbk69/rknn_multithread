@@ -12,6 +12,9 @@
 #include "postprocess.h"
 #include "pipeline/CascadePipeline.hpp"
 
+// P1: 使用彩色日志系统
+#include "Logger.hpp"
+
 int main(int argc, char **argv)
 {
     char *model_name = NULL;
@@ -19,7 +22,7 @@ int main(int argc, char **argv)
     // 检查命令行参数: 程序名 + 模型路径 + 视频/摄像头
     if (argc != 3)
     {
-        printf("Usage: %s <rknn model> <video/camera> \n", argv[0]);
+        LOG_ERROR("[Main]", "Usage: %s <rknn model> <video/camera>", argv[0]);
         return -1;
     }
 
@@ -46,7 +49,7 @@ int main(int argc, char **argv)
     CascadePipeline pipeline;
     if (pipeline.init({mc}) != 0)
     {
-        printf("CascadePipeline init fail!\n");
+        LOG_ERROR("[Main]", "CascadePipeline init fail!");
         return -1;
     }
 
@@ -65,7 +68,7 @@ int main(int argc, char **argv)
 
     if (!capture.isOpened())
     {
-        printf("Failed to open video/camera: %s\n", vedio_name);
+        LOG_ERROR("[Main]", "Failed to open video/camera: %s", vedio_name);
         return -1;
     }
 
@@ -135,9 +138,9 @@ int main(int argc, char **argv)
     gettimeofday(&time, nullptr);
     auto endTime = time.tv_sec * 1000 + time.tv_usec / 1000;
     if (endTime > startTime)
-        printf("Average:\t %f fps/s\n", float(frames) / float(endTime - startTime) * 1000.0);
+        LOG_INFO("[Main]", "Average: %f fps/s", float(frames) / float(endTime - startTime) * 1000.0);
     else
-        printf("Average:\t 0 fps/s\n");
+        LOG_INFO("[Main]", "Average: 0 fps/s");
 
     return 0;
 }

@@ -381,6 +381,7 @@ private slots:
 
 private:
     void log(const QString& category, const QString& message);
+    void logWithColor(const QString& category, const QString& message, const QColor& color);
     QString currentTimestamp();
     void updateThresholdLabels();
     void enableControls(bool enabled);

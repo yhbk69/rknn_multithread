@@ -5,6 +5,8 @@
 #include "rk/mainwindow.hpp"
 #include <QDateTime>
 #include <QSettings>
+#include <QTextCharFormat>
+#include <QTextCursor>
 #include <fstream>
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
@@ -14,7 +16,48 @@ QString MainWindow::currentTimestamp() {
 }
 
 void MainWindow::log(const QString& category, const QString& message) {
-    log_edit_->append(QString("[%1][%2] %3").arg(currentTimestamp(), category, message));
+    // 根据类别选择颜色
+    QColor color;
+    QString cat_lower = category.toLower();
+
+    if (cat_lower == "alarm" || cat_lower == "error") {
+        color = QColor(220, 50, 50);    // 红色
+    } else if (cat_lower == "warning" || cat_lower == "warn") {
+        color = QColor(220, 180, 0);    // 黄色
+    } else if (cat_lower == "system") {
+        color = QColor(50, 120, 220);   // 蓝色
+    } else if (cat_lower == "info") {
+        color = QColor(50, 180, 50);    // 绿色
+    } else {
+        color = QColor(180, 180, 180);  // 灰色（默认）
+    }
+
+    logWithColor(category, message, color);
+}
+
+void MainWindow::logWithColor(const QString& category, const QString& message, const QColor& color) {
+    QTextCursor cursor = log_edit_->textCursor();
+    cursor.movePosition(QTextCursor::End);
+
+    // 添加时间戳（灰色）
+    QTextCharFormat tsFormat;
+    tsFormat.setForeground(QColor(128, 128, 128));
+    cursor.insertText(QString("[%1]").arg(currentTimestamp()), tsFormat);
+
+    // 添加类别（带颜色，加粗）
+    QTextCharFormat catFormat;
+    catFormat.setForeground(color);
+    catFormat.setFontWeight(QFont::Bold);
+    cursor.insertText(QString("[%1] ").arg(category), catFormat);
+
+    // 添加消息（带颜色）
+    QTextCharFormat msgFormat;
+    msgFormat.setForeground(color);
+    cursor.insertText(message + "\n", msgFormat);
+
+    // 滚动到底部
+    log_edit_->setTextCursor(cursor);
+    log_edit_->ensureCursorVisible();
 }
 
 void MainWindow::updateThresholdLabels() {

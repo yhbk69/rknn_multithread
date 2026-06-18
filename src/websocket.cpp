@@ -21,6 +21,9 @@
 #include <cstdio>
 #include <errno.h>
 
+// P1: 使用彩色日志系统
+#include "Logger.hpp"
+
 /* 递归创建目录（类似 mkdir -p） */
 static void mkdirs(const std::string &path, mode_t mode) {
     std::string current;
@@ -77,7 +80,7 @@ int WebSocket::init(const WebSocketConfig &config)
     if (!ws_server_->listen(addr, static_cast<quint16>(config_.server_port)))
     {
         QString err = ws_server_->errorString();
-        fprintf(stderr, "[WebSocket] Server failed to start: %s\n",
+        LOG_ERROR("[WebSocket]", "Server failed to start: %s",
                 err.toUtf8().constData());
         emit serverError(err);
         return -1;
@@ -87,11 +90,11 @@ int WebSocket::init(const WebSocketConfig &config)
             this, &WebSocket::onNewConnection);
     connect(ws_server_, &QWebSocketServer::closed,
             this, [this]() {
-                printf("[WebSocket] Server closed.\n");
+                LOG_INFO("[WebSocket]", "Server closed.");
                 emit serverClosed();
             });
 
-    printf("[WebSocket] Server started on %s:%d\n",
+    LOG_INFO("[WebSocket]", "Server started on %s:%d",
            config_.server_host.toUtf8().constData(),
            ws_server_->serverPort());
     emit serverStarted(ws_server_->serverPort());
@@ -120,7 +123,7 @@ void WebSocket::shutdown()
     ws_server_->close();
     ws_server_->deleteLater();
     ws_server_ = nullptr;
-    printf("[WebSocket] Server shutdown complete.\n");
+    LOG_INFO("[WebSocket]", "Server shutdown complete.");
 }
 
 /* ============================================================
@@ -191,13 +194,6 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
     if (!ws_server_ || !detect_results || detect_results->count == 0)
         return 0;
 
-    /* P1-4: 无客户端连接时跳过（省去加锁和 JSON 构造开销） */
-    {
-        QMutexLocker clientLock(&clients_mtx_);
-        if (clients_.isEmpty())
-            return 0;
-    }
-
     int alarm_count = 0;
 
     /* 获取当前时间戳（用于速率限制） */
@@ -207,7 +203,7 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
 
     QMutexLocker configLock(&config_mtx_);
 
-    /* P1-4: 无报警类别配置时跳过 */
+    /* 无报警类别配置时跳过 */
     if (config_.alarm_class_names.empty())
         return 0;
 
@@ -256,7 +252,7 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
             }
             cv::imwrite(screenshot_path, frame);
             data["image_url"] = screenshot_path;
-            printf("[WebSocket] Screenshot saved: %s\n", screenshot_path);
+            LOG_INFO("[WebSocket]", "Screenshot saved: %s", screenshot_path);
         }
 
         QJsonObject msg;
@@ -266,18 +262,20 @@ int WebSocket::checkAndAlarm(const detect_result_group_t *detect_results, int fr
         QString json = QString::fromUtf8(
             QJsonDocument(msg).toJson(QJsonDocument::Compact));
 
-        /* 广播 */
+        /* 广播（仅在有客户端连接时） */
         {
             QMutexLocker clientLock(&clients_mtx_);
-            for (QWebSocket *client : clients_)
-            {
-                if (client->isValid())
-                    client->sendTextMessage(json);
+            if (!clients_.isEmpty()) {
+                for (QWebSocket *client : clients_)
+                {
+                    if (client->isValid())
+                        client->sendTextMessage(json);
+                }
             }
         }
 
         alarm_count++;
-        printf("[WebSocket] ALARM [%s]: %s at frame %d\n",
+        LOG_ALARM("[WebSocket]", "ALARM [%s]: %s at frame %d",
                alarmId.toUtf8().constData(), det.name, frame_id);
 
         emit alarmTriggered(alarmId, QString::fromUtf8(det.name),
@@ -321,7 +319,7 @@ void WebSocket::sendAlarm(const QString &alarmType,
         QJsonDocument(msg).toJson(QJsonDocument::Compact));
     broadcast(json);
 
-    printf("[WebSocket] MANUAL ALARM [%s]: %s\n",
+    LOG_ALARM("[WebSocket]", "MANUAL ALARM [%s]: %s",
            alarmId.toUtf8().constData(),
            alarmType.toUtf8().constData());
 }
@@ -412,7 +410,7 @@ void WebSocket::onNewConnection()
     if (!client)
         return;
 
-    printf("[WebSocket] Client connected: %s\n",
+    LOG_INFO("[WebSocket]", "Client connected: %s",
            client->peerAddress().toString().toUtf8().constData());
 
     connect(client, &QWebSocket::textMessageReceived,
@@ -440,7 +438,7 @@ void WebSocket::onSocketDisconnected()
     if (!client)
         return;
 
-    printf("[WebSocket] Client disconnected: %s\n",
+    LOG_INFO("[WebSocket]", "Client disconnected: %s",
            client->peerAddress().toString().toUtf8().constData());
 
     removeClient(client);
@@ -464,7 +462,7 @@ void WebSocket::onTextMessageReceived(const QString &message)
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &parseError);
     if (parseError.error != QJsonParseError::NoError || !doc.isObject())
     {
-        printf("[WebSocket] Invalid JSON from client: %s\n",
+        LOG_WARN("[WebSocket]", "Invalid JSON from client: %s",
                message.left(100).toUtf8().constData());
         return;
     }
@@ -544,7 +542,7 @@ void WebSocket::handlePing(QWebSocket *client)
 void WebSocket::handleAck(QWebSocket *client, const QJsonObject &json)
 {
     QString alarmId = json["alarm_id"].toString();
-    printf("[WebSocket] ACK from client for alarm: %s\n",
+    LOG_INFO("[WebSocket]", "ACK from client for alarm: %s",
            alarmId.toUtf8().constData());
     emit alarmAcknowledged(client, alarmId);
 }
@@ -589,7 +587,7 @@ void WebSocket::handleSetFence(QWebSocket *client, const QJsonObject &json)
 
     setFence(fence);
 
-    printf("[WebSocket] Fence set for stream %s: (%.2f,%.2f)-(%.2f,%.2f)\n",
+    LOG_INFO("[WebSocket]", "Fence set for stream %s: (%.2f,%.2f)-(%.2f,%.2f)",
            fence.stream_id.toUtf8().constData(),
            fence.x1, fence.y1, fence.x2, fence.y2);
 

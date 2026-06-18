@@ -6,6 +6,9 @@
 // P1 修复: 使用帧池优化内存分配
 #include "FramePool.hpp"
 
+// P1: 使用彩色日志系统
+#include "Logger.hpp"
+
 // 全局帧池实例（用于 CascadePipeline）
 static FramePool g_frame_pool(32);
 
@@ -16,7 +19,7 @@ CascadePipeline::~CascadePipeline() {}
 int CascadePipeline::init(const std::vector<ModelConfig> &models, int channel_id)
 {
     if (models.empty()) {
-        fprintf(stderr, "[Cascade] Empty models\n");
+        LOG_ERROR("[Cascade]", "Empty models");
         return -1;
     }
 
@@ -58,18 +61,18 @@ int CascadePipeline::init(const std::vector<ModelConfig> &models, int channel_id
 
         int ret = stage->init(channel_id);
         if (ret != 0) {
-            fprintf(stderr, "[Cascade] Stage %zu init failed\n", i);
+            LOG_ERROR("[Cascade]", "Stage %zu init failed", i);
             return ret;
         }
 
         if (stage->roi_stage_idx >= 0)
-            printf("[Cascade] Stage %zu (%s) uses ROI from stage %d\n",
+            LOG_INFO("[Cascade]", "Stage %zu (%s) uses ROI from stage %d",
                    i, stage->name.c_str(), stage->roi_stage_idx);
 
         stages_.push_back(std::move(stage));
     }
 
-    printf("[Cascade] %zu stage(s) initialized, cascade=%d\n",
+    LOG_INFO("[Cascade]", "%zu stage(s) initialized, cascade=%d",
            stages_.size(), (int)is_cascade_);
     return 0;
 }
