@@ -38,7 +38,9 @@ public:
         current_fps_ = 0.0;
         total_frames_ = 0;
         total_detections_ = 0;
+        total_alarms_ = 0;
         class_counts_.clear();
+        alarm_class_counts_.clear();
         recent_latencies_.clear();
     }
 
@@ -70,6 +72,15 @@ public:
             last_fps_time_ = now;
         }
         frame_count_interval_++;
+    }
+
+    /* 记录一次报警 */
+    void recordAlarm(const std::string& alarm_class = "") {
+        std::lock_guard<std::mutex> lock(mtx_);
+        total_alarms_++;
+        if (!alarm_class.empty()) {
+            alarm_class_counts_[alarm_class]++;
+        }
     }
 
     /* 获取当前 FPS */
@@ -117,6 +128,18 @@ public:
         return total_detections_;
     }
 
+    /* 获取总报警数 */
+    long long getTotalAlarms() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return total_alarms_;
+    }
+
+    /* 获取报警类别统计 */
+    std::map<std::string, long long> getAlarmClassCounts() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return alarm_class_counts_;
+    }
+
     /* 获取类别统计 */
     std::map<std::string, long long> getClassCounts() const {
         std::lock_guard<std::mutex> lock(mtx_);
@@ -134,6 +157,7 @@ public:
         j["latency_p95_ms"] = getP95LatencyUnlocked();
         j["total_frames"] = total_frames_;
         j["total_detections"] = total_detections_;
+        j["total_alarms"] = total_alarms_;
         j["detections_per_frame"] = (total_frames_ > 0) ?
             (double)total_detections_ / total_frames_ : 0.0;
 
@@ -146,6 +170,16 @@ public:
             classes[sorted[i].first] = sorted[i].second;
         }
         j["class_counts"] = classes;
+
+        // 报警类别统计
+        json alarm_classes;
+        std::vector<std::pair<std::string, long long>> alarm_sorted(alarm_class_counts_.begin(), alarm_class_counts_.end());
+        std::sort(alarm_sorted.begin(), alarm_sorted.end(),
+                  [](const auto& a, const auto& b) { return a.second > b.second; });
+        for (size_t i = 0; i < std::min(alarm_sorted.size(), (size_t)10); i++) {
+            alarm_classes[alarm_sorted[i].first] = alarm_sorted[i].second;
+        }
+        j["alarm_class_counts"] = alarm_classes;
 
         // 运行时间
         auto dt = std::chrono::duration_cast<std::chrono::seconds>(
@@ -173,9 +207,11 @@ public:
         std::lock_guard<std::mutex> lock(mtx_);
         total_frames_ = 0;
         total_detections_ = 0;
+        total_alarms_ = 0;
         current_fps_ = 0.0;
         recent_latencies_.clear();
         class_counts_.clear();
+        alarm_class_counts_.clear();
         start_time_ = Clock::now();
         last_fps_time_ = start_time_;
     }
@@ -210,8 +246,10 @@ private:
     int frame_count_interval_ = 0;
     long long total_frames_ = 0;
     long long total_detections_ = 0;
+    long long total_alarms_ = 0;
     std::vector<double> recent_latencies_;
     std::map<std::string, long long> class_counts_;
+    std::map<std::string, long long> alarm_class_counts_;
 };
 
 #endif // DETECTION_STATS_HPP

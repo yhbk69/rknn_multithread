@@ -10,6 +10,9 @@
 #include <QFileInfo>
 #include <QNetworkInterface>
 #include <QFileDialog>
+#include <QFile>
+#include <QTextStream>
+#include "Logger.hpp"
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), expanded_ch_(-1)
@@ -425,14 +428,30 @@ void MainWindow::setupUI() {
 
     right_layout->addWidget(status_group, 0);
 
-    QGroupBox* ws_group = new QGroupBox("WebSocket", right_panel);
-    QVBoxLayout* ws_layout = new QVBoxLayout(ws_group);
-    ws_layout->setContentsMargins(10, 16, 10, 10);
-    ws_status_label_ = new QLabel("未启动", ws_group);
-    ws_clients_label_ = new QLabel("客户端: 0", ws_group);
-    ws_layout->addWidget(ws_status_label_);
-    ws_layout->addWidget(ws_clients_label_);
-    right_layout->addWidget(ws_group, 0);
+    // 检测统计网格（可滚动，固定高度区域）
+    QGroupBox* stats_group = new QGroupBox("检测结果", right_panel);
+    stats_group->setMaximumHeight(210);
+    QVBoxLayout* stats_vbox = new QVBoxLayout(stats_group);
+    stats_vbox->setContentsMargins(10, 16, 10, 6);
+    stats_vbox->setSpacing(0);
+
+    QScrollArea* stats_scroll = new QScrollArea(stats_group);
+    stats_scroll->setWidgetResizable(true);
+    stats_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    stats_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    stats_scroll->setFrameShape(QFrame::NoFrame);
+    stats_scroll->setStyleSheet("QScrollArea { background-color: transparent; border: none; }");
+
+    QWidget* stats_container = new QWidget();
+    stats_container->setStyleSheet("background-color: transparent;");
+    stats_grid_ = new QGridLayout(stats_container);
+    stats_grid_->setContentsMargins(0, 0, 0, 0);
+    stats_grid_->setSpacing(4);
+
+    stats_scroll->setWidget(stats_container);
+    stats_vbox->addWidget(stats_scroll);
+
+    right_layout->addWidget(stats_group, 0);
 
     QGroupBox* log_group = new QGroupBox("运行日志", right_panel);
     QVBoxLayout* log_layout = new QVBoxLayout(log_group);
@@ -453,9 +472,9 @@ void MainWindow::setupUI() {
 
     main_splitter->addWidget(right_panel);
 
-    main_splitter->setStretchFactor(0, 3);
+    main_splitter->setStretchFactor(0, 2);
     main_splitter->setStretchFactor(1, 1);
-    main_splitter->setSizes({1200, 400});
+    main_splitter->setSizes({1066, 534});
 
     QVBoxLayout* main_layout = new QVBoxLayout(central);
     main_layout->setContentsMargins(4, 4, 4, 4);
@@ -463,6 +482,22 @@ void MainWindow::setupUI() {
 
     status_label_ = new QLabel("就绪", this);
     statusBar()->addWidget(status_label_, 1);
+
+    auto addSep = [this]() {
+        QLabel* sep = new QLabel("|", this);
+        sep->setStyleSheet("color: #555; font-weight: bold; margin: 0 4px;");
+        statusBar()->addPermanentWidget(sep);
+    };
+
+    addSep();
+    ws_clients_label_ = new QLabel("WS 客户端: 0", this);
+    ws_clients_label_->setStyleSheet("color: #8a9bb0;");
+    statusBar()->addPermanentWidget(ws_clients_label_);
+    addSep();
+    ws_status_label_ = new QLabel("WS 未启动", this);
+    ws_status_label_->setStyleSheet("color: #8a9bb0;");
+    statusBar()->addPermanentWidget(ws_status_label_);
+    addSep();
     statusBar()->addPermanentWidget(new QLabel("RK3588 YOLO 四路检测", this));
 
     // 信号槽连接
@@ -477,6 +512,82 @@ void MainWindow::setupUI() {
     connect(conf_slider_, &QSlider::valueChanged, this, &MainWindow::onConfThresholdChanged);
     connect(nms_slider_, &QSlider::valueChanged, this, &MainWindow::onNmsThresholdChanged);
     connect(clear_log_btn_, &QPushButton::clicked, this, &MainWindow::onClearLog);
+
+    // 从标签文件加载所有类别名，初始化检测统计网格
+    initStatsGrid();
+}
+
+// ============================================================
+// 从标签文件加载类别名，填充3行检测统计网格
+// ============================================================
+void MainWindow::initStatsGrid() {
+    if (!stats_grid_) return;
+
+    // 读取标签文件
+    AppConfig cfg = load_config();
+
+    // 尝试多个可能的标签文件路径
+    QStringList candidates;
+    // 1. 从 config 解析的 label_path
+    if (!cfg.label_path.empty())
+        candidates << QString::fromStdString(cfg.label_path);
+    // 2. 相对于当前工作目录
+    candidates << QString::fromStdString(cfg.label_file);
+    // 3. model/ 下
+    candidates << QString("model/%1").arg(QString::fromStdString(cfg.label_file));
+    // 4. install 目录下
+    candidates << QString("../model/%1").arg(QString::fromStdString(cfg.label_file));
+
+    QFile file;
+    for (const QString& path : candidates) {
+        qDebug() << "[StatsGrid] Trying:" << path << "exists:" << QFile::exists(path);
+        file.setFileName(path);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            qDebug() << "[StatsGrid] Opened:" << path;
+            break;
+        }
+        file.setFileName("");
+    }
+
+    if (!file.isOpen()) {
+        qDebug() << "[StatsGrid] FAILED: no label file found";
+        return;
+    }
+
+    all_class_names_.clear();
+    QTextStream ts(&file);
+    while (!ts.atEnd()) {
+        QString line = ts.readLine().trimmed();
+        if (!line.isEmpty())
+            all_class_names_.push_back(line.toStdString());
+    }
+    file.close();
+
+    if (all_class_names_.empty()) return;
+
+    // 每行4列，不限行数，上下滚动
+    int total = (int)all_class_names_.size();
+    int cols = 4;
+
+    // 清除旧内容
+    QLayoutItem* item;
+    while ((item = stats_grid_->takeAt(0)) != nullptr) {
+        if (item->widget()) item->widget()->deleteLater();
+        delete item;
+    }
+
+    // 创建所有类别标签（灰色底色，检测到时高亮）
+    for (int i = 0; i < total; i++) {
+        QLabel* lbl = new QLabel();
+        lbl->setText(QString::fromStdString(all_class_names_[i]) + ": 0");
+        lbl->setStyleSheet(
+            "background-color: #2c2c3e; color: #666; border-radius: 3px; "
+            "padding: 2px 4px; font-size: 11px;");
+        stats_class_labels_[all_class_names_[i]] = lbl;
+        stats_grid_->addWidget(lbl, i / cols, i % cols);
+    }
+
+    LOG_INFO("[MainWindow]", "Stats grid: %d classes loaded", total);
 }
 
 // ============================================================

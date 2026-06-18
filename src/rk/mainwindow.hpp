@@ -45,9 +45,12 @@
 #include <mutex>
 #include <vector>
 #include <array>
+#include <map>
+#include <string>
 #include <chrono>
 
 #include <opencv2/opencv.hpp>
+#include <nlohmann/json.hpp>
 
 #include "rkYolov5s.hpp"   // YOLOv5Engine
 #include "rknnPool.hpp"
@@ -163,6 +166,8 @@ signals:
     void error(const QString& msg);
     /* P1-3: 每帧一次批量检测结果信号，替代逐框发射 */
     void detectionBatch(int frameId, const QVector<FrameDetections::Det>& dets);
+    /* 统计面板更新（每秒） */
+    void statsPanelUpdated(long long totalAlarms, const QString& classStatsJson);
 
 protected:
     void run() override {
@@ -249,17 +254,34 @@ protected:
 
                 /* 5b. WebSocket 报警检查（仅在启用且有报警类别时执行） */
                 if (auto ws = ws_.lock()) {
-                    if (ws->isAlarmEnabled())
-                        ws->checkAndAlarm(&result, frames, detect_img);
+                    if (ws->isAlarmEnabled()) {
+                        int alarm_cnt = ws->checkAndAlarm(&result, frames, detect_img);
+                        if (alarm_cnt > 0) {
+                            for (int i = 0; i < result.count; i++) {
+                                const detect_result_t &det = result.results[i];
+                                if (det.name[0] != '\0') {
+                                    std::string cls(det.name);
+                                    if (ws->config().alarm_class_names.count(cls) > 0)
+                                        alarm_counts_[cls]++;
+                                }
+                            }
+                        }
+                    }
                 }
 
                 /* 5c. P1-3: 批量收集检测结果，每帧只发射一次信号 */
                 QVector<FrameDetections::Det> dets;
+                std::vector<std::string> class_names;
                 for (int i = 0; i < result.count; i++) {
                     const detect_result_t &det = result.results[i];
                     dets.append({QString::fromUtf8(det.name), det.prop,
                                  det.box.left, det.box.top, det.box.right, det.box.bottom});
+                    if (det.name[0] != '\0')
+                        class_names.push_back(det.name);
                 }
+                /* 记录检测类别统计 */
+                for (const auto& name : class_names)
+                    class_counts_[name]++;
                 if (!dets.isEmpty())
                     emit detectionBatch(frames, dets);
             }
@@ -275,8 +297,17 @@ protected:
                 frame_queue_->push(channel_id_, out_frame, current_fps);
 
             /* 8. 定期发射统计信息（每 5 帧一次） */
-            if (frames % 5 == 0)
+            if (frames % 5 == 0) {
                 emit statsUpdated(frames, current_fps, infer_time);
+                /* 每 30 帧发射一次类别/报警统计面板更新 */
+                if (frames % 30 == 0) {
+                    long long total_alarms = 0;
+                    for (auto& [k, v] : alarm_counts_) total_alarms += v;
+                    json cls_j;
+                    for (auto& [k, v] : class_counts_) cls_j[k] = v;
+                    emit statsPanelUpdated(total_alarms, QString::fromStdString(cls_j.dump()));
+                }
+            }
 
             frames++;
             /* P1-1: 移除 msleep(1)，不再人为阻塞，pipeline.get() 已提供同步 */
@@ -314,6 +345,8 @@ private:
     ModelConfig single_cfg_;
     bool use_cascade_ = false;
     std::vector<ModelConfig> cascade_models_;
+    std::map<std::string, long long> class_counts_;  // 检测类别计数
+    std::map<std::string, long long> alarm_counts_;  // 报警类别计数
 };
 
 // ============================================================
@@ -376,6 +409,9 @@ private slots:
     void onWebSocketAlarm(const QString &alarmId, const QString &alarmType,
                           int frameId, long long timestampMs);
 
+    // 统计面板更新
+    void onStatsPanelUpdated(int ch, long long totalAlarms, const QString& classStatsJson);
+
     // 配置热更新
     void onConfigFileChanged(const QString &path);
 
@@ -392,6 +428,7 @@ private:
     void restoreSettings();
     void updateZoomState();
     void syncAlarmScreenshotDirToConfig(const std::string &dir);
+    void initStatsGrid();
 
     // --- 视频显示网格 ---
     VideoCell video_cells_[MAX_CHANNELS];
@@ -439,6 +476,12 @@ private:
     // WebSocket 状态
     QLabel* ws_status_label_;
     QLabel* ws_clients_label_;
+
+    // 检测统计网格
+    std::map<std::string, QLabel*> stats_class_labels_;  // 类别 -> 标签映射
+    QLabel* stats_alarm_label_ = nullptr;                 // 报警总数标签
+    QGridLayout* stats_grid_ = nullptr;                   // 3行网格布局
+    std::vector<std::string> all_class_names_;            // 所有类别名（从标签文件读取）
 
     // 逻辑
     DetectThread* detect_threads_[MAX_CHANNELS] = {};

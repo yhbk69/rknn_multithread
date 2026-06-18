@@ -147,6 +147,11 @@ void MainWindow::onStartDetection() {
             [this, ch](int frameId, const QVector<FrameDetections::Det>& dets) {
                 onDetectionBatch(ch, frameId, dets);
             });
+        /* 连接报警统计面板更新信号 */
+        connect(detect_threads_[i], &DetectThread::statsPanelUpdated, this,
+            [this, ch](long long totalAlarms, const QString& classStatsJson) {
+                onStatsPanelUpdated(ch, totalAlarms, classStatsJson);
+            });
 
         detect_threads_[i]->start();
         log("system", QString("通道%1 检测开始。来源：%2").arg(i + 1).arg(video_edits_[i]->text()));
@@ -405,22 +410,70 @@ void MainWindow::onWebSocketStarted(quint16 port) {
         }
     }
     ws_status_label_->setText(QString("ws://%1:%2").arg(real_ip).arg(port));
+    ws_status_label_->setStyleSheet("color: #4ec9b0; font-weight: bold;");
 }
 
 void MainWindow::onWebSocketClientConnected(QWebSocket *client) {
     Q_UNUSED(client);
-    ws_clients_label_->setText(QString("客户端: %1").arg(ws_server_->clientCount()));
+    ws_clients_label_->setText(QString("WS 客户端: %1").arg(ws_server_->clientCount()));
 }
 
 void MainWindow::onWebSocketClientDisconnected(QWebSocket *client) {
     Q_UNUSED(client);
-    ws_clients_label_->setText(QString("客户端: %1").arg(ws_server_->clientCount()));
+    ws_clients_label_->setText(QString("WS 客户端: %1").arg(ws_server_->clientCount()));
 }
 
 void MainWindow::onWebSocketAlarm(const QString &alarmId, const QString &alarmType,
                                    int frameId, long long timestampMs) {
     Q_UNUSED(alarmId); Q_UNUSED(frameId); Q_UNUSED(timestampMs);
     log("alarm", QString("报警: %1").arg(alarmType));
+}
+
+// ============================================================
+// 报警统计面板更新
+// ============================================================
+
+void MainWindow::onStatsPanelUpdated(int ch, long long totalAlarms, const QString& classStatsJson) {
+    Q_UNUSED(ch);
+
+    // 更新报警总数（如果有的话）
+    if (stats_alarm_label_) {
+        stats_alarm_label_->setText(QString(" 报警: %1 ").arg(totalAlarms));
+        if (totalAlarms > 0)
+            stats_alarm_label_->setStyleSheet(
+                "background-color: #922b21; color: #ffffff; border-radius: 3px; "
+                "padding: 2px 8px; font-weight: bold; font-size: 11px;");
+        else
+            stats_alarm_label_->setStyleSheet(
+                "background-color: #2c3e50; color: #ecf0f1; border-radius: 3px; "
+                "padding: 2px 8px; font-size: 11px;");
+    }
+
+    // 解析类别 JSON
+    QJsonDocument doc = QJsonDocument::fromJson(classStatsJson.toUtf8());
+    if (!doc.isObject()) return;
+    QJsonObject obj = doc.object();
+
+    // 先把所有标签重置为灰色（未检测到）
+    for (auto& [name, lbl] : stats_class_labels_) {
+        lbl->setText(QString::fromStdString(name) + ": 0");
+        lbl->setStyleSheet(
+            "background-color: #2c2c3e; color: #666; border-radius: 3px; "
+            "padding: 2px 6px; font-size: 11px;");
+    }
+
+    // 高亮有检测结果的类别
+    for (auto it = obj.begin(); it != obj.end(); ++it) {
+        std::string cls = it.key().toStdString();
+        long long count = it.value().toVariant().toLongLong();
+        auto lit = stats_class_labels_.find(cls);
+        if (lit != stats_class_labels_.end()) {
+            lit->second->setText(QString::fromStdString(cls) + ": " + QString::number(count));
+            lit->second->setStyleSheet(
+                "background-color: #1a5276; color: #2ecc71; border-radius: 3px; "
+                "padding: 2px 6px; font-weight: bold; font-size: 11px;");
+        }
+    }
 }
 
 // ============================================================
