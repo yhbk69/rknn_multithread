@@ -10,6 +10,9 @@
 // P1: 使用彩色日志系统
 #include "Logger.hpp"
 
+// P2: 使用 RGA 硬件加速预处理
+#include "RgaAccelerator.hpp"
+
 /* ============ 辅助函数（与 rkYolov5s.cpp 共享） ============ */
 
 static unsigned char *load_model(const char *filename, int *model_size)
@@ -159,25 +162,37 @@ cv::Mat YOLO11Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
         nms = nms_threshold;
     }
 
-    /* YOLO11 预处理：BGR→RGB + letterbox */
+    /* YOLO11 预处理：BGR→RGB + letterbox (RGA 硬件加速) */
     cv::Mat img;
-    cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
-    int img_w = img.cols, img_h = img.rows;
-
     BOX_RECT pads;
     memset(&pads, 0, sizeof(BOX_RECT));
     cv::Size target_size(width, height);
+    int img_w = orig_img.cols, img_h = orig_img.rows;
     float scale_w = (float)target_size.width / img_w;
     float scale_h = (float)target_size.height / img_h;
 
     if (img_w != width || img_h != height) {
         float min_scale = std::min(scale_w, scale_h);
         scale_w = scale_h = min_scale;
-        letterbox(img, resized_img_, pads, min_scale, target_size);
-        inputs[0].buf = resized_img_.data;
+
+        // P2: 尝试 RGA 硬件加速
+        if (RgaAccelerator::letterboxRga(orig_img, resized_img_, pads, width, height) == 0) {
+            img = resized_img_;
+        } else {
+            // 回退 CPU
+            cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
+            letterbox(img, resized_img_, pads, min_scale, target_size);
+            img = resized_img_;
+        }
+        inputs[0].buf = img.data;
     } else {
         scale_w = scale_h = 1.0f;
         memset(&pads, 0, sizeof(pads));
+
+        // P2: 使用 RGA 进行 BGR→RGB
+        if (RgaAccelerator::cvtColorRga(orig_img, img) != 0) {
+            cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
+        }
         inputs[0].buf = img.data;
     }
 

@@ -505,6 +505,10 @@ void WebSocket::dispatchMessage(QWebSocket *client, const QJsonObject &json)
     {
         handleSetFence(client, json);
     }
+    else if (type == "get_stats")
+    {
+        handleGetStats(client);
+    }
     /*
      * TODO: 用户扩展其他消息类型
      *
@@ -536,6 +540,37 @@ void WebSocket::handlePing(QWebSocket *client)
     pong["type"] = "pong";
     client->sendTextMessage(QString::fromUtf8(
         QJsonDocument(pong).toJson(QJsonDocument::Compact)));
+}
+
+/*
+ * {"type":"get_stats"}
+ * ->
+ * {"type":"stats","data":{"fps_current":25.3,"fps_avg":24.8,...}}
+ */
+void WebSocket::handleGetStats(QWebSocket *client)
+{
+    // 获取统计数据（如果设置了外部统计对象）
+    QJsonObject data;
+
+    if (stats_callback_) {
+        nlohmann::json j = stats_callback_();
+        // json -> QJsonObject
+        data = QJsonDocument::fromJson(
+            QByteArray::fromStdString(j.dump())).object();
+    } else {
+        // 默认空统计
+        data["fps_current"] = 0;
+        data["fps_avg"] = 0;
+        data["total_frames"] = 0;
+        data["total_detections"] = 0;
+    }
+
+    QJsonObject resp;
+    resp["type"] = "stats";
+    resp["data"] = data;
+
+    client->sendTextMessage(QString::fromUtf8(
+        QJsonDocument(resp).toJson(QJsonDocument::Compact)));
 }
 
 /* {"type":"ack","alarm_id":"..."} */
@@ -649,4 +684,38 @@ QJsonObject WebSocket::fenceToJson(const FenceRegion &f) const
     rect["y2"] = f.y2;
     obj["fence"] = rect;
     return obj;
+}
+
+/* ============================================================
+ * broadcastStats - 广播统计数据到所有客户端
+ * ============================================================ */
+
+void WebSocket::broadcastStats(const nlohmann::json& stats)
+{
+    if (!ws_server_) return;
+
+    // 检查是否有客户端连接
+    {
+        QMutexLocker clientLock(&clients_mtx_);
+        if (clients_.isEmpty()) return;
+    }
+
+    // 构造消息
+    QJsonObject data = QJsonDocument::fromJson(
+        QByteArray::fromStdString(stats.dump())).object();
+
+    QJsonObject msg;
+    msg["type"] = "stats";
+    msg["data"] = data;
+
+    QString json_str = QString::fromUtf8(
+        QJsonDocument(msg).toJson(QJsonDocument::Compact));
+
+    // 广播
+    QMutexLocker clientLock(&clients_mtx_);
+    for (QWebSocket *client : clients_)
+    {
+        if (client->isValid())
+            client->sendTextMessage(json_str);
+    }
 }

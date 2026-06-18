@@ -38,11 +38,13 @@
 #include <string>
 #include <set>
 #include <atomic>
+#include <functional>
 #include <sys/time.h>
 
 #include <opencv2/core.hpp>
 
 #include "postprocess.h"
+#include "nlohmann/json.hpp"
 
 /* ============================================================
  * 视频流信息
@@ -164,6 +166,15 @@ public:
     void updateConfig(const WebSocketConfig &config);
     WebSocketConfig config() const;
 
+    /* ---- 统计 ---- */
+
+    /* 设置统计数据回调（用于 get_stats 响应） */
+    using StatsCallback = std::function<nlohmann::json()>;
+    void setStatsCallback(StatsCallback callback) { stats_callback_ = callback; }
+
+    /* 广播统计数据（定时调用） */
+    void broadcastStats(const nlohmann::json& stats);
+
 signals:
     /* 客户端事件 */
     void clientConnected(QWebSocket *client);
@@ -204,6 +215,7 @@ private:
     void handleAck(QWebSocket *client, const QJsonObject &json);
     void handleGetStreams(QWebSocket *client);
     void handleSetFence(QWebSocket *client, const QJsonObject &json);
+    void handleGetStats(QWebSocket *client);
 
     /* 工具 */
     QString generateAlarmId();
@@ -229,6 +241,9 @@ private:
 
     // P0 修复: 使用 atomic 保证多线程安全
     std::atomic<int> alarm_counter_{0};  // 报警计数器（用于生成 alarm_id）
+
+    // 统计回调
+    StatsCallback stats_callback_;
 };
 
 #endif /* WEBSOCKET_HPP */

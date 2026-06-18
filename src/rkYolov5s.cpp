@@ -336,15 +336,17 @@ rknn_context *YOLOv5Engine::get_pctx()
     return &ctx;
 }
 
+// P2: 使用 RGA 硬件加速预处理
+#include "RgaAccelerator.hpp"
+
 /**
- * P2-3: 三级流水线 - Stage P (CPU)
- * BGR→RGB 转换 + letterbox 缩放填充（纯 CPU 操作，可与其他实例的 NPU 推理重叠）
+ * P2-3: 三级流水线 - Stage P (CPU + RGA)
+ * BGR→RGB 转换 + letterbox 缩放填充（RGA 硬件加速）
  */
 static void stage_preprocess(cv::Mat &orig_img, YOLOv5Engine::PipelineData &data, int model_w, int model_h)
 {
-    cv::cvtColor(orig_img, data.rgb_img, cv::COLOR_BGR2RGB);
-    int img_w = data.rgb_img.cols;
-    int img_h = data.rgb_img.rows;
+    int img_w = orig_img.cols;
+    int img_h = orig_img.rows;
     cv::Size target_size(model_w, model_h);
     data.scale_w = (float)target_size.width / img_w;
     data.scale_h = (float)target_size.height / img_h;
@@ -355,13 +357,27 @@ static void stage_preprocess(cv::Mat &orig_img, YOLOv5Engine::PipelineData &data
         data.scale_w = min_scale;
         data.scale_h = min_scale;
         memset(&data.pads, 0, sizeof(BOX_RECT));
-        letterbox(data.rgb_img, data.padded_img, data.pads, min_scale, target_size);
+
+        // P2: 尝试 RGA 硬件加速
+        if (RgaAccelerator::letterboxRga(orig_img, data.padded_img, data.pads, model_w, model_h) == 0) {
+            // RGA 成功，rgb_img 不需要（letterboxRga 已包含 BGR→RGB）
+            data.rgb_img = data.padded_img;  // 复用，避免额外拷贝
+        } else {
+            // RGA 失败，回退 CPU
+            cv::cvtColor(orig_img, data.rgb_img, cv::COLOR_BGR2RGB);
+            letterbox(data.rgb_img, data.padded_img, data.pads, min_scale, target_size);
+        }
     }
     else
     {
         data.scale_w = 1.0f;
         data.scale_h = 1.0f;
         memset(&data.pads, 0, sizeof(BOX_RECT));
+
+        // P2: 使用 RGA 进行 BGR→RGB
+        if (RgaAccelerator::cvtColorRga(orig_img, data.rgb_img) != 0) {
+            cv::cvtColor(orig_img, data.rgb_img, cv::COLOR_BGR2RGB);
+        }
     }
 }
 
