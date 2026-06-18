@@ -11,7 +11,7 @@
  *
  * 线程安全：
  *   - put() 和 get() 可从不同线程调用
- *   - 内部通过 queueMtx 保护任务队列
+ *   - P1 修复: 使用无锁队列替代 std::queue，减少锁竞争
  *
  * 模板参数：
  *   - rknnModel: 模型类（如 YOLOv5Engine），需提供 infer()、rknn_init()、get_pctx()
@@ -23,11 +23,13 @@
 
 #include "ThreadPool.hpp"
 #include "coreNum.hpp"
+#include "LockFreeQueue.hpp"
 #include <vector>
 #include <iostream>
 #include <mutex>
 #include <queue>
 #include <memory>
+#include <future>
 
 // rknnModel模型类, inputType模型输入类型, outputType模型输出类型
 template <typename rknnModel, typename inputType, typename outputType>
@@ -39,10 +41,16 @@ private:
     int channel_id_ = 0;            // P2-1: 通道编号，用于按通道固定 NPU 核心分配
 
     long long id;                   // 任务分配计数器，用于轮询选择模型实例
-    std::mutex idMtx, queueMtx;     // idMtx: 保护 id 的互斥锁; queueMtx: 保护结果队列的互斥锁
+    std::mutex idMtx;               // idMtx: 保护 id 的互斥锁
     std::unique_ptr<dpool::ThreadPool> pool;                   // 线程池实例
-    std::queue<std::future<outputType>> futs;                  // 推理结果的异步任务队列（按提交顺序排列）
-    std::queue<int> model_ids_;                                // 每个任务对应的模型 ID
+
+    // P1 修复: 使用无锁队列替代 std::queue，减少锁竞争
+    struct TaskItem {
+        std::future<outputType> fut;
+        int model_id;
+    };
+    lfq::LockFreeQueue<TaskItem> task_queue_;                  // 无锁任务队列
+
     std::vector<std::shared_ptr<rknnModel>> models;            // 模型实例数组
     int last_model_id_ = -1;                                   // 最近一次 get() 使用的模型 ID
     static constexpr size_t MAX_QUEUE_SIZE = 16;               // 队列最大容量，超过时丢弃旧帧
@@ -124,46 +132,52 @@ int rknnPool<rknnModel, inputType, outputType>::getModelId()
 
 // 提交推理任务到线程池（非阻塞）
 // 将输入数据和对应的模型实例绑定后提交到线程池执行，返回的 future 存入队列
-// 队列满时丢弃最旧的未处理帧，防止内存无限增长
+// P1 修复: 使用无锁队列，减少锁竞争
 template <typename rknnModel, typename inputType, typename outputType>
 int rknnPool<rknnModel, inputType, outputType>::put(const inputType &inputData)
 {
-    std::lock_guard<std::mutex> lock(queueMtx);
-    if (futs.size() >= MAX_QUEUE_SIZE)
+    // 检查队列是否已满（近似检查，无锁队列的 size_approx 不精确）
+    if (task_queue_.size_approx() >= MAX_QUEUE_SIZE)
     {
-        // 队列满，直接丢弃最旧帧（future 来自 packaged_task，析构不阻塞）
-        futs.pop();
-        model_ids_.pop();
+        // 队列满，丢弃最旧帧
+        auto old = task_queue_.pop();
+        if (old) {
+            // old 的 future 析构会自动清理
+        }
     }
+
     int modelId = this->getModelId();
     auto model = models[modelId];
     inputType img = inputData;
-    futs.push(pool->submit([model](inputType img) -> outputType {
+
+    // 创建任务项
+    TaskItem item;
+    item.fut = pool->submit([model](inputType img) -> outputType {
         return model->infer(img, nullptr);
-    }, std::move(img)));
-    model_ids_.push(modelId);
+    }, std::move(img));
+    item.model_id = modelId;
+
+    // 使用无锁队列入队
+    task_queue_.push(std::make_shared<TaskItem>(std::move(item)));
     return 0;
 }
 
 // 获取最早的推理结果（阻塞等待）
 // 按照提交顺序（FIFO）获取结果，如果队列为空则返回 1 表示无结果
+// P1 修复: 使用无锁队列，减少锁竞争
 template <typename rknnModel, typename inputType, typename outputType>
 int rknnPool<rknnModel, inputType, outputType>::get(outputType &outputData)
 {
-    std::future<outputType> fut;
-    int model_id;
-    {
-        std::lock_guard<std::mutex> lock(queueMtx);
-        if(futs.empty() == true)
-            return 1;
-        fut = std::move(futs.front());
-        futs.pop();
-        model_id = model_ids_.front();
-        model_ids_.pop();
+    // 从无锁队列出队
+    auto item_opt = task_queue_.pop();
+    if (!item_opt) {
+        return 1;  // 队列为空
     }
-    // 在锁外等待推理完成，不阻塞 put()
-    outputData = fut.get();
-    last_model_id_ = model_id;
+
+    auto& item = **item_opt;
+    // 在无锁环境下等待推理完成
+    outputData = item.fut.get();
+    last_model_id_ = item.model_id;
     return 0;
 }
 
@@ -187,13 +201,10 @@ void rknnPool<rknnModel, inputType, outputType>::set_thresholds(float conf, floa
 template <typename rknnModel, typename inputType, typename outputType>
 rknnPool<rknnModel, inputType, outputType>::~rknnPool()
 {
-    // P0 修复: 添加锁保护，防止与 put() 并发时的竞态条件
-    std::lock_guard<std::mutex> lock(queueMtx);
-    while (!futs.empty())
-    {
-        outputType temp = futs.front().get();
-        futs.pop();
-        model_ids_.pop();
+    // 清空无锁队列中的所有任务
+    while (auto item_opt = task_queue_.pop()) {
+        // 等待 future 完成
+        (*item_opt)->fut.get();
     }
 }
 

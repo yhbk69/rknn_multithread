@@ -3,6 +3,12 @@
 #include "opencv2/highgui.hpp"
 #include <cstring>
 
+// P1 修复: 使用帧池优化内存分配
+#include "FramePool.hpp"
+
+// 全局帧池实例（用于 CascadePipeline）
+static FramePool g_frame_pool(32);
+
 CascadePipeline::CascadePipeline() {}
 
 CascadePipeline::~CascadePipeline() {}
@@ -72,10 +78,13 @@ int CascadePipeline::put(const cv::Mat &frame)
 {
     if (stages_.empty()) return -1;
 
-    /* 保存原始帧到队列，与 pool 的 put/get 顺序一一对应 */
+    /* P1 修复: 使用帧池替代 cv::Mat::clone()，减少堆分配 */
     {
         std::lock_guard<std::mutex> lk(orig_mtx_);
-        orig_frames_.push(frame.clone());
+        // 从帧池获取缓冲区并复制数据
+        cv::Mat pooled_frame = g_frame_pool.acquire(frame.rows, frame.cols, frame.type());
+        frame.copyTo(pooled_frame);
+        orig_frames_.push(pooled_frame);
     }
 
     return stages_[0]->put(frame);
@@ -136,7 +145,7 @@ int CascadePipeline::get(cv::Mat &output)
 
             int n_rois = (int)rois.size();
 
-            /* 裁剪 + resize + 送入 stage，同时记录 ROI 偏移 */
+            /* P1 修复: 使用帧池进行 ROI 裁剪 */
             int actually_put = 0;
             std::vector<std::pair<int,int>> roi_offsets;
             for (auto &roi : rois) {
@@ -148,12 +157,18 @@ int CascadePipeline::get(cv::Mat &output)
                 int h = y2 - y1 + 1;
                 if (w < 4 || h < 4) continue;
 
-                cv::Mat crop = (*src_frame)(cv::Rect(x1, y1, w, h)).clone();
+                // 从帧池获取缓冲区进行裁剪
+                cv::Mat crop = g_frame_pool.acquire(w, h, src_frame->type());
+                (*src_frame)(cv::Rect(x1, y1, w, h)).copyTo(crop);
+
                 cv::Mat resized;
                 cv::resize(crop, resized, cv::Size(stage->input_w, stage->input_h));
                 stage->put(resized);
                 roi_offsets.push_back({x1, y1});
                 actually_put++;
+
+                // 释放缓冲区回帧池
+                g_frame_pool.release(crop);
             }
             {
                 std::lock_guard<std::mutex> lk(roi_mtx_);
@@ -229,6 +244,12 @@ int CascadePipeline::get(cv::Mat &output)
 
     last_frame_ = current_frame;
     output = current_frame;
+
+    // P1 修复: 释放原始帧回帧池
+    if (!orig_frame.empty()) {
+        g_frame_pool.release(orig_frame);
+    }
+
     return 0;
 }
 
