@@ -35,6 +35,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
 #include <QShortcut>
+#include <QTimer>
 #include <QNetworkInterface>
 #include <QAbstractSocket>
 #include <QFileSystemWatcher>
@@ -71,15 +72,50 @@ struct FrameDetections {
     QVector<Det> detections;
 };
 
+/*
+ * 线程安全帧队列（单生产者单消费者）
+ *
+ * 工作线程 push，GUI 线程 pop。
+ * 用互斥锁 + 条件变量实现，避免 Qt 信号序列化开销。
+ */
+struct FrameQueue {
+    struct Entry {
+        int channel = 0;
+        cv::Mat bgr_frame;
+        double fps = 0;
+    };
+    std::queue<Entry> q;
+    mutable std::mutex mtx;
+    std::condition_variable cv;
+
+    void push(int ch, const cv::Mat& frame, double fps) {
+        {
+            std::lock_guard<std::mutex> lk(mtx);
+            /* 队列满时丢弃最旧帧，防止 GUI 线程落后太多 */
+            if (q.size() >= 8) q.pop();
+            q.push({ch, frame.clone(), fps});
+        }
+        cv.notify_one();
+    }
+
+    bool pop(Entry& e) {
+        std::unique_lock<std::mutex> lk(mtx);
+        if (q.empty()) return false;
+        e = std::move(q.front());
+        q.pop();
+        return true;
+    }
+};
+
 // ============================================================
 // 检测工作线程（每路摄像头一个实例）
 //
-// 职责：读取视频帧 → 送入 CascadePipeline 推理 → 将结果传递给 GUI 线程
+// 职责：读取视频帧 → 送入 CascadePipeline 推理 → 将结果写入共享队列
 //
-// 性能优化（Phase 1）：
-//   P1-1: 移除 QThread::msleep(1)，避免人为阻塞
-//   P1-2: 传递 cv::Mat 而非 QImage，GUI 线程按需转换，避免工作线程做 BGR→RGB + copy
-//   P1-3: 每帧只发射一个 batch 信号，替代每个检测框一个信号
+// 优化要点：
+//   - 移除 msleep(1)，pipeline.get() 已提供帧间同步
+//   - 每帧只发射一个 detectionBatch 信号（检测结果）
+//   - 视频帧通过 FrameQueue 共享队列传递，GUI 线程 QTimer 轮询
 // ============================================================
 class DetectThread : public QThread {
     Q_OBJECT
@@ -117,10 +153,11 @@ public:
     void setRoi(const QRect &roi) { roi_rect_ = roi; roi_enabled_ = !roi.isNull(); }
     void clearRoi() { roi_rect_ = QRect(); roi_enabled_ = false; }
     int channelId() const { return channel_id_; }
+    /* 设置共享帧队列，工作线程直接写入，GUI 线程轮询读取 */
+    void setFrameQueue(FrameQueue* q) { frame_queue_ = q; }
 
 signals:
-    /* 传递 QImage 给 GUI 线程显示 */
-    void frameReady(const QImage& image, double fps);
+    /* 视频帧不再通过信号传递，改用 FrameQueue 共享队列 */
     void statsUpdated(int framesProcessed, double avgFps, double inferenceTime);
     void finished();
     void error(const QString& msg);
@@ -233,8 +270,9 @@ protected:
             double current_fps = stats.updateFps(frames);
             renderer.drawFps(out_frame, current_fps);
 
-            /* 7. 传递 QImage 给 GUI 线程（BGR→RGB 转换 + 深拷贝） */
-            emit frameReady(renderer.toQImage(out_frame), current_fps);
+            /* 7. 写入共享队列（非阻塞，GUI 线程异步消费） */
+            if (frame_queue_)
+                frame_queue_->push(channel_id_, out_frame, current_fps);
 
             /* 8. 定期发射统计信息（每 5 帧一次） */
             if (frames % 5 == 0)
@@ -248,7 +286,8 @@ protected:
         while (true) {
             cv::Mat img;
             if (pipeline->get(img) != 0) break;
-            emit frameReady(renderer.toQImage(img), stats.getCurrentFps());
+            if (frame_queue_)
+                frame_queue_->push(channel_id_, img, stats.getCurrentFps());
         }
 
         double avg_fps = stats.calcAvgFps(frames);
@@ -269,6 +308,7 @@ private:
     std::atomic<bool> paused_{false};
     std::atomic<bool> step_once_{false};
     std::weak_ptr<WebSocket> ws_;
+    FrameQueue* frame_queue_ = nullptr;  /* 共享帧队列指针 */
     QRect roi_rect_;
     bool roi_enabled_ = false;
     ModelConfig single_cfg_;
@@ -310,7 +350,8 @@ private slots:
     void onBrowseVideo(int ch);
     void onStartDetection();
     void onStopDetection();
-    void onFrameReady(int ch, const QImage& image, double fps);
+    /* 帧队列轮询槽（QTimer 驱动，GUI 线程执行 BGR→RGB→QImage） */
+    void onPollFrames();
     void onStatsUpdated(int ch, int frames, double fps, double inferTime);
     void onDetectFinished(int ch);
     void onDetectError(int ch, const QString& msg);
@@ -402,6 +443,8 @@ private:
     DetectThread* detect_threads_[MAX_CHANNELS] = {};
     std::shared_ptr<WebSocket> ws_server_;
     std::unique_ptr<QFileSystemWatcher> config_watcher_;
+    std::unique_ptr<QTimer> frame_poll_timer_;  /* 帧队列轮询定时器 */
+    FrameQueue frame_queues_[MAX_CHANNELS];     /* 每通道一个共享帧队列 */
     float conf_threshold_ = 0.25f;
     float nms_threshold_ = 0.45f;
     std::string model_path_;

@@ -14,6 +14,10 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), expanded_ch_(-1)
 {
+    /* 注册自定义类型，用于跨线程信号槽传递 */
+    qRegisterMetaType<FrameDetections::Det>("FrameDetections::Det");
+    qRegisterMetaType<QVector<FrameDetections::Det>>("QVector<FrameDetections::Det>");
+
     AppConfig init_cfg = load_config();
     conf_threshold_ = init_cfg.box_threshold;
     nms_threshold_ = init_cfg.nms_threshold;
@@ -62,6 +66,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(config_watcher_.get(), &QFileSystemWatcher::fileChanged,
             this, &MainWindow::onConfigFileChanged);
     log("system", "已启用配置热更新，修改 config.json 自动生效。");
+
+    /* 帧队列轮询定时器：每 16ms（~60Hz）从共享队列取帧并更新显示 */
+    frame_poll_timer_ = std::make_unique<QTimer>(this);
+    connect(frame_poll_timer_.get(), &QTimer::timeout, this, &MainWindow::onPollFrames);
+    frame_poll_timer_->start(16);
 }
 
 MainWindow::~MainWindow() {

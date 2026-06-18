@@ -134,8 +134,8 @@ void MainWindow::onStartDetection() {
         detect_threads_[i]->setWebSocket(ws_server_);
 
         int ch = i;
-        connect(detect_threads_[i], &DetectThread::frameReady, this,
-            [this, ch](const QImage& img, double fps) { onFrameReady(ch, img, fps); });
+        /* 设置共享帧队列，工作线程直接写入 */
+        detect_threads_[i]->setFrameQueue(&frame_queues_[i]);
         connect(detect_threads_[i], &DetectThread::statsUpdated, this,
             [this, ch](int frames, double fps, double inferTime) { onStatsUpdated(ch, frames, fps, inferTime); });
         connect(detect_threads_[i], &DetectThread::finished, this,
@@ -200,31 +200,50 @@ void MainWindow::onStepFrame() {
 }
 
 // ============================================================
-// 帧回调（接收 QImage，更新视频显示）
+// 帧队列轮询（QTimer 驱动，GUI 线程执行）
+//
+// 每 16ms 被调用一次，从所有通道的共享队列中取帧：
+//   1. cv::Mat BGR → QImage RGB（.copy() 深拷贝）
+//   2. 更新 QGraphicsPixmapItem 显示
+//   3. fitInView 只在尺寸变化时调用
+//   4. FPS 文本 5Hz 节流
 // ============================================================
+void MainWindow::onPollFrames() {
+    for (int ch = 0; ch < MAX_CHANNELS; ch++) {
+        FrameQueue::Entry e;
+        if (!frame_queues_[ch].pop(e)) continue;
+        if (e.bgr_frame.empty()) continue;
 
-void MainWindow::onFrameReady(int ch, const QImage& image, double fps) {
-    if (ch < 0 || ch >= MAX_CHANNELS) return;
-    last_frames_[ch] = image;
+        /* BGR→RGB 转换 + QImage 深拷贝 */
+        cv::Mat rgb;
+        cv::cvtColor(e.bgr_frame, rgb, cv::COLOR_BGR2RGB);
+        if (rgb.empty()) continue;
 
-    VideoCell& cell = video_cells_[ch];
-    QPixmap pix = QPixmap::fromImage(image);
-    cell.pixmap_item->setPixmap(pix);
+        QImage qimg(rgb.data, rgb.cols, rgb.rows,
+                    static_cast<int>(rgb.step), QImage::Format_RGB888);
+        QImage owned = qimg.copy(); /* 深拷贝，确保数据独立于 cv::Mat */
 
-    /* fitInView 只在尺寸变化时调用，避免每帧 layout 重算 */
-    if (pix.size() != cell.last_pix_size) {
-        cell.scene->setSceneRect(pix.rect());
-        cell.view->fitInView(cell.pixmap_item, Qt::KeepAspectRatio);
-        cell.last_pix_size = pix.size();
+        last_frames_[ch] = owned;
+
+        VideoCell& cell = video_cells_[ch];
+        QPixmap pix = QPixmap::fromImage(owned);
+        cell.pixmap_item->setPixmap(pix);
+
+        /* fitInView 只在尺寸变化时调用，避免每帧 layout 重算 */
+        if (pix.size() != cell.last_pix_size) {
+            cell.scene->setSceneRect(pix.rect());
+            cell.view->fitInView(cell.pixmap_item, Qt::KeepAspectRatio);
+            cell.last_pix_size = pix.size();
+        }
+
+        /* FPS 文本 5Hz 节流（每 200ms 更新一次） */
+        long long now = QDateTime::currentMSecsSinceEpoch();
+        if (now - cell.last_fps_text_update >= 200) {
+            cell.overlay->setText(QString("FPS: %1").arg(e.fps, 0, 'f', 1));
+            cell.last_fps_text_update = now;
+        }
+        cell.last_fps = e.fps;
     }
-
-    /* FPS 文本 5Hz 节流（每 200ms 更新一次） */
-    long long now = QDateTime::currentMSecsSinceEpoch();
-    if (now - cell.last_fps_text_update >= 200) {
-        cell.overlay->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
-        cell.last_fps_text_update = now;
-    }
-    cell.last_fps = fps;
 }
 
 void MainWindow::onStatsUpdated(int ch, int frames, double fps, double inferTime) {
