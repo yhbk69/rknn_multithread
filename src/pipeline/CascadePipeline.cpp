@@ -1,16 +1,14 @@
 #include "pipeline/CascadePipeline.hpp"
+#include "pipeline/RoiProcessor.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/highgui.hpp"
 #include <cstring>
 
-// P1 修复: 使用帧池优化内存分配
 #include "FramePool.hpp"
-
-// P1: 使用彩色日志系统
 #include "Logger.hpp"
 
-// 全局帧池实例（用于 CascadePipeline）
 static FramePool g_frame_pool(32);
+static RoiProcessor g_roi_processor;
 
 CascadePipeline::CascadePipeline() {}
 
@@ -133,53 +131,20 @@ int CascadePipeline::get(cv::Mat &output)
             if (stage->roi_stage_idx == 0 && !orig_frame.empty())
                 src_frame = &orig_frame;
 
-            /* 筛选 ROI：按类名匹配 */
-            std::vector<detect_result_t> rois;
-            for (int i = 0; i < src_detect.count; i++) {
-                auto &d = src_detect.results[i];
-                if (stage->roi_class_names.empty()) {
-                    rois.push_back(d);
-                } else {
-                    for (const auto &cls : stage->roi_class_names) {
-                        if (cls == d.name) { rois.push_back(d); break; }
-                    }
-                }
-            }
+            auto rois = g_roi_processor.filterByClassNames(src_detect, stage->roi_class_names);
 
-            int n_rois = (int)rois.size();
+            auto crop_result = g_roi_processor.cropRois(
+                *src_frame, rois, stage->input_w, stage->input_h, g_frame_pool);
 
-            /* P1 修复: 使用帧池进行 ROI 裁剪 */
-            int actually_put = 0;
-            std::vector<std::pair<int,int>> roi_offsets;
-            for (auto &roi : rois) {
-                int x1 = std::max(0, roi.box.left);
-                int y1 = std::max(0, roi.box.top);
-                int x2 = std::min(src_frame->cols - 1, roi.box.right);
-                int y2 = std::min(src_frame->rows - 1, roi.box.bottom);
-                int w = x2 - x1 + 1;
-                int h = y2 - y1 + 1;
-                if (w < 4 || h < 4) continue;
+            for (auto& crop : crop_result.crops)
+                stage->put(crop);
 
-                // 从帧池获取缓冲区进行裁剪
-                cv::Mat crop = g_frame_pool.acquire(w, h, src_frame->type());
-                (*src_frame)(cv::Rect(x1, y1, w, h)).copyTo(crop);
-
-                cv::Mat resized;
-                cv::resize(crop, resized, cv::Size(stage->input_w, stage->input_h));
-                stage->put(resized);
-                roi_offsets.push_back({x1, y1});
-                actually_put++;
-
-                // 释放缓冲区回帧池
-                g_frame_pool.release(crop);
-            }
+            int actually_put = crop_result.count;
             {
                 std::lock_guard<std::mutex> lk(roi_mtx_);
                 roi_counts_.push(actually_put);
             }
 
-            /* 收集结果 */
-            // P0 修复: 初始化 expected 防止未定义行为
             int expected = 0;
             {
                 std::lock_guard<std::mutex> lk(roi_mtx_);
@@ -189,24 +154,9 @@ int CascadePipeline::get(cv::Mat &output)
                 }
             }
 
-            detect_result_group_t merged;
-            merged.count = 0;
+            auto merged = g_roi_processor.mergeResults(
+                src_detect, stage->roi_class_names, actually_put > 0);
 
-            /* 保留非 ROI_class 结果 */
-            if (actually_put > 0 && !stage->roi_class_names.empty()) {
-                for (int i = 0; i < src_detect.count && merged.count < OBJ_NUMB_MAX_SIZE; i++) {
-                    bool is_roi = false;
-                    for (const auto &cls : stage->roi_class_names) {
-                        if (cls == src_detect.results[i].name) { is_roi = true; break; }
-                    }
-                    if (!is_roi)
-                        merged.results[merged.count++] = src_detect.results[i];
-                }
-            } else if (actually_put == 0) {
-                merged = src_detect;
-            }
-
-            /* 收集 stage 结果并绘制 */
             for (int i = 0; i < expected; i++) {
                 cv::Mat stage_out;
                 if (stage->get(stage_out) != 0) break;
@@ -216,8 +166,8 @@ int CascadePipeline::get(cv::Mat &output)
                     merged.results[merged.count++] = stage_detect.results[j];
 
                 if (stage_out.data && stage->draw_result) {
-                    int roi_ox = (i < (int)roi_offsets.size()) ? roi_offsets[i].first : 0;
-                    int roi_oy = (i < (int)roi_offsets.size()) ? roi_offsets[i].second : 0;
+                    int roi_ox = (i < (int)crop_result.offsets.size()) ? crop_result.offsets[i].first : 0;
+                    int roi_oy = (i < (int)crop_result.offsets.size()) ? crop_result.offsets[i].second : 0;
                     char text[256];
                     for (int j = 0; j < stage_detect.count; j++) {
                         auto *det = &stage_detect.results[j];

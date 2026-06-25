@@ -14,7 +14,7 @@ TEST_CASE("WebSocket - checkAndAlarm rate limiting", "[ws]") {
 
     /* Should not crash with empty results */
     REQUIRE_NOTHROW(ws->checkAndAlarm(&results, 0));
-    ws->stop();
+    ws->shutdown();
 }
 
 TEST_CASE("WebSocket - broadcast to zero clients does not crash", "[ws]") {
@@ -23,25 +23,27 @@ TEST_CASE("WebSocket - broadcast to zero clients does not crash", "[ws]") {
 
     auto ws = std::make_shared<WebSocket>();
     REQUIRE_NOTHROW(ws->broadcast(R"({"type":"test"})"));
-    ws->stop();
+    ws->shutdown();
 }
 
-TEST_CASE("WebSocket - start and stop cycle", "[ws]") {
+TEST_CASE("WebSocket - init and shutdown cycle", "[ws]") {
     int argc = 0;
     QCoreApplication app(argc, nullptr);
 
     auto ws = std::make_shared<WebSocket>();
-    REQUIRE_NOTHROW(ws->start(0));  /* port 0 = auto-assign */
-    REQUIRE_NOTHROW(ws->stop());
+    WebSocketConfig cfg;
+    cfg.server_port = 0;  /* port 0 = auto-assign */
+    REQUIRE_NOTHROW(ws->init(cfg));
+    REQUIRE_NOTHROW(ws->shutdown());
 }
 
-TEST_CASE("WebSocket - isAlarmEnabled returns false by default", "[ws]") {
+TEST_CASE("WebSocket - isAlarmEnabled returns true by default", "[ws]") {
     int argc = 0;
     QCoreApplication app(argc, nullptr);
 
     auto ws = std::make_shared<WebSocket>();
-    REQUIRE_FALSE(ws->isAlarmEnabled());
-    ws->stop();
+    REQUIRE(ws->isAlarmEnabled());
+    ws->shutdown();
 }
 
 TEST_CASE("WebSocket - clientCount starts at 0", "[ws]") {
@@ -50,5 +52,5 @@ TEST_CASE("WebSocket - clientCount starts at 0", "[ws]") {
 
     auto ws = std::make_shared<WebSocket>();
     REQUIRE(ws->clientCount() == 0);
-    ws->stop();
+    ws->shutdown();
 }

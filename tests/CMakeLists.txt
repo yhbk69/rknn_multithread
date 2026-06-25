@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
+set(CMAKE_AUTOMOC ON)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/src)
@@ -38,7 +40,8 @@ endif()
 # ---- P2: Core logic tests ----
 add_unit_test_with_fixtures(test_postprocess
     unit/test_postprocess.cpp
-    ${CMAKE_SOURCE_DIR}/src/postprocess.cpp)
+    ${CMAKE_SOURCE_DIR}/src/postprocess.cpp
+    ${CMAKE_SOURCE_DIR}/src/config_loader.cpp)
 
 # ---- P3: New tests ----
 add_unit_test(test_preprocess unit/test_preprocess.cpp
@@ -46,10 +49,18 @@ add_unit_test(test_preprocess unit/test_preprocess.cpp
 target_link_libraries(test_preprocess ${OpenCV_LIBS}
     ${CMAKE_SOURCE_DIR}/include/3rdparty/rga/RK3588/lib/Linux/aarch64/librga.so)
 
-add_unit_test_with_fixtures(test_config_loader unit/test_config_loader.cpp)
+add_unit_test_with_fixtures(test_config_loader
+    unit/test_config_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/config_loader.cpp)
 
 add_unit_test(test_core_num unit/test_core_num.cpp)
 target_link_libraries(test_core_num Threads::Threads)
+
+add_unit_test(test_lockfree_queue unit/test_lockfree_queue.cpp)
+target_link_libraries(test_lockfree_queue Threads::Threads)
+
+add_unit_test(test_framepool unit/test_framepool.cpp)
+target_link_libraries(test_framepool ${OpenCV_LIBS} Threads::Threads)
 
 add_unit_test(test_iengine unit/test_iengine.cpp)
 target_link_libraries(test_iengine ${OpenCV_LIBS})
@@ -59,17 +70,24 @@ add_unit_test(test_rknn_pool unit/test_rknn_pool.cpp)
 target_link_libraries(test_rknn_pool ${OpenCV_LIBS} Threads::Threads)
 
 if(ENABLE_QT)
-    add_unit_test(test_websocket unit/test_websocket.cpp)
-    target_link_libraries(test_websocket Qt5::Core Qt5::WebSockets Qt5::Network)
+    add_unit_test(test_websocket unit/test_websocket.cpp
+        ${CMAKE_SOURCE_DIR}/src/websocket.cpp
+        ${CMAKE_SOURCE_DIR}/src/websocket_alarm.cpp
+        ${CMAKE_SOURCE_DIR}/src/websocket_handlers.cpp
+        ${CMAKE_SOURCE_DIR}/src/config_loader.cpp
+        ${CMAKE_SOURCE_DIR}/include/websocket.hpp)
+    target_link_libraries(test_websocket Qt5::Core Qt5::WebSockets Qt5::Network Qt5::Gui ${OpenCV_LIBS} Threads::Threads)
 endif()
 
 add_unit_test(test_cascade unit/test_cascade.cpp
     ${CMAKE_SOURCE_DIR}/src/pipeline/CascadePipeline.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/roi_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/rkYolov5s.cpp
     ${CMAKE_SOURCE_DIR}/src/engine/YOLO11Engine.cpp
     ${CMAKE_SOURCE_DIR}/src/postprocess.cpp
     ${CMAKE_SOURCE_DIR}/src/postprocess_yolo11.cpp
-    ${CMAKE_SOURCE_DIR}/src/preprocess.cpp)
+    ${CMAKE_SOURCE_DIR}/src/preprocess.cpp
+    ${CMAKE_SOURCE_DIR}/src/config_loader.cpp)
 target_link_libraries(test_cascade ${OpenCV_LIBS} Threads::Threads
     ${CMAKE_SOURCE_DIR}/include/librknnrt.so
     ${CMAKE_SOURCE_DIR}/include/3rdparty/rga/RK3588/lib/Linux/aarch64/librga.so)

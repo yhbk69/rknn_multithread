@@ -65,17 +65,24 @@ set(COMMON_SOURCES
     src/rkYolov5s.cpp
     src/engine/YOLO11Engine.cpp
     src/pipeline/CascadePipeline.cpp
+    src/pipeline/roi_processor.cpp
+    src/config_loader.cpp
 )
 
 set(QT_SOURCES
     ${COMMON_SOURCES}
     src/websocket.cpp
+    src/websocket_alarm.cpp
+    src/websocket_handlers.cpp
     include/websocket.hpp
     src/rk/main_rk.cpp
     src/rk/mainwindow.cpp
     src/rk/mainwindow_helpers.cpp
     src/rk/mainwindow_slots.cpp
+    src/rk/mainwindow_style.cpp
     src/rk/mainwindow.hpp
+    src/pipeline/detect_thread.cpp
+    include/pipeline/DetectThread.hpp
 )
 
 set(CLI_SOURCES

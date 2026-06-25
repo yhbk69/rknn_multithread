@@ -124,6 +124,9 @@ void MainWindow::onStartDetection() {
     int thread_num = (user_set < recommended) ? user_set : recommended;
     if (thread_num < 1) thread_num = 1;
     export_records_.clear();
+    // 重置各通道统计更新时间，避免重启后前几帧被误节流
+    for (int i = 0; i < MAX_CHANNELS; i++)
+        last_stats_update_[i] = 0;
 
     for (int i = 0; i < MAX_CHANNELS; i++) {
         QString video_text = video_edits_[i]->text().trimmed();
@@ -255,9 +258,8 @@ void MainWindow::onStatsUpdated(int ch, int frames, double fps, double inferTime
     if (ch < 0 || ch >= MAX_CHANNELS) return;
     // P1-4: 右侧面板 FPS/帧数 5Hz 节流
     long long now = QDateTime::currentMSecsSinceEpoch();
-    static long long last_stats_update[MAX_CHANNELS] = {};
-    if (now - last_stats_update[ch] < 200) return;
-    last_stats_update[ch] = now;
+    if (now - last_stats_update_[ch] < 200) return;
+    last_stats_update_[ch] = now;
     fps_labels_[ch]->setText(QString::number(fps, 'f', 1));
     frames_labels_[ch]->setText(QString::number(frames));
 
