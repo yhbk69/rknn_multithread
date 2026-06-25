@@ -23,6 +23,7 @@
 #include "pipeline/FrameQueue.hpp"
 
 class WebSocket;
+class VideoRecorder;
 
 class DetectThread : public QThread {
     Q_OBJECT
@@ -60,6 +61,7 @@ public:
     void clearRoi() { roi_rect_ = QRect(); roi_enabled_ = false; }
     int channelId() const { return channel_id_; }
     void setFrameQueue(FrameQueue* q) { frame_queue_ = q; }
+    void setRecorder(VideoRecorder* rec) { recorder_ = rec; }
 
 signals:
     void statsUpdated(int framesProcessed, double avgFps, double inferenceTime);
@@ -90,6 +92,7 @@ private:
     std::vector<ModelConfig> cascade_models_;
     std::map<std::string, long long> class_counts_;
     std::map<std::string, long long> alarm_counts_;
+    VideoRecorder* recorder_ = nullptr;  // 视频录制器（可选）
 };
 
 #endif // DETECT_THREAD_HPP

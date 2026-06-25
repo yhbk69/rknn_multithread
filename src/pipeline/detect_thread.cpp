@@ -1,4 +1,5 @@
 #include "pipeline/DetectThread.hpp"
+#include "pipeline/VideoRecorder.hpp"
 #include "websocket.hpp"
 #include "Logger.hpp"
 
@@ -115,6 +116,10 @@ void DetectThread::run() {
         double infer_time = (double)(stats.elapsedMs() - infer_start);
         double current_fps = stats.updateFps(frames);
         renderer.drawFps(out_frame, current_fps);
+
+        // 录制：将带检测框的帧写入视频文件
+        if (recorder_ && recorder_->isRecording())
+            recorder_->write(out_frame);
 
         if (frame_queue_)
             frame_queue_->push(channel_id_, out_frame, current_fps);

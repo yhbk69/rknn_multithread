@@ -3,6 +3,7 @@
  */
 
 #include "rk/mainwindow.hpp"
+#include "pipeline/VideoRecorder.hpp"
 #include <QDateTime>
 #include <QMessageBox>
 #include <QFileDialog>
@@ -163,6 +164,7 @@ void MainWindow::onStartDetection() {
     log("system", QString("thread_num 自适应: %1 路 × %2 线程").arg(active_count).arg(thread_num));
 
     enableControls(true);
+    record_btn_->setEnabled(true);
     model_status_label_->setText("运行中");
     model_status_label_->setStyleSheet("color: #ffb74d; font-weight: bold;");
     model_status_left_label_->setText("运行中");
@@ -290,6 +292,12 @@ void MainWindow::onDetectFinished(int ch) {
     if (all_done) {
         npu_usage_bar_->setValue(0);
         enableControls(false);
+        // 停止录制
+        if (record_btn_->isChecked()) {
+            record_btn_->setChecked(false);
+            onRecordToggle();
+        }
+        record_btn_->setEnabled(false);
         model_status_label_->setText("已完成");
         model_status_label_->setStyleSheet("color: #8a9bb0; font-weight: bold;");
         model_status_left_label_->setText("已选择");
@@ -502,4 +510,58 @@ void MainWindow::onConfigFileChanged(const QString &path) {
         ws_server_->updateConfig(wscfg);
     }
     config_watcher_->addPath(QFileInfo("config.json").absoluteFilePath());
+}
+
+// ============================================================
+// 视频录制
+// ============================================================
+
+void MainWindow::onRecordToggle() {
+    if (record_btn_->isChecked()) {
+        // 开始录制：为每个活跃通道创建录制器
+        QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
+        bool any_recording = false;
+
+        for (int i = 0; i < MAX_CHANNELS; i++) {
+            if (!detect_threads_[i]) continue;
+            QString video_text = video_edits_[i]->text().trimmed();
+            if (video_text.isEmpty()) continue;
+
+            // 获取视频帧尺寸
+            QImage frame = last_frames_[i];
+            if (frame.isNull()) continue;
+
+            QString path = QString("record_ch%1_%2.mp4").arg(i + 1).arg(timestamp);
+            recorders_[i] = std::make_shared<VideoRecorder>();
+            if (recorders_[i]->open(path.toStdString(), 25, frame.width(), frame.height())) {
+                detect_threads_[i]->setRecorder(recorders_[i].get());
+                any_recording = true;
+                log("system", QString("通道%1 开始录制: %2").arg(i + 1).arg(path));
+            } else {
+                log("system", QString("通道%1 录制失败: 无法打开 %2").arg(i + 1).arg(path));
+                recorders_[i].reset();
+            }
+        }
+
+        if (any_recording) {
+            record_btn_->setText("停止录制");
+            record_btn_->setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold;");
+        } else {
+            record_btn_->setChecked(false);
+            log("system", "无可用帧进行录制。");
+        }
+    } else {
+        // 停止录制
+        for (int i = 0; i < MAX_CHANNELS; i++) {
+            if (recorders_[i]) {
+                detect_threads_[i]->setRecorder(nullptr);
+                recorders_[i]->close();
+                log("system", QString("通道%1 停止录制，共 %2 帧")
+                    .arg(i + 1).arg(recorders_[i]->frameCount()));
+                recorders_[i].reset();
+            }
+        }
+        record_btn_->setText("录制");
+        record_btn_->setStyleSheet("");
+    }
 }

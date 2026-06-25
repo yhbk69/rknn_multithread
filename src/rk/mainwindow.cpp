@@ -298,6 +298,9 @@ void MainWindow::setupUI() {
     screenshot_btn_->setEnabled(false);
     export_btn_ = new QPushButton("导出结果", left_panel);
     export_btn_->setEnabled(false);
+    record_btn_ = new QPushButton("录制", left_panel);
+    record_btn_->setEnabled(false);
+    record_btn_->setCheckable(true);
 
     thread_spin_ = new QSpinBox(left_panel);
     thread_spin_->setRange(1, 8);
@@ -309,6 +312,7 @@ void MainWindow::setupUI() {
     btn_row->addWidget(step_btn_);
     btn_row->addWidget(screenshot_btn_);
     btn_row->addWidget(export_btn_);
+    btn_row->addWidget(record_btn_);
     btn_row->addStretch();
     btn_row->addWidget(new QLabel("线程数:", left_panel));
     btn_row->addWidget(thread_spin_);
@@ -509,6 +513,7 @@ void MainWindow::setupUI() {
     connect(step_btn_, &QPushButton::clicked, this, &MainWindow::onStepFrame);
     connect(screenshot_btn_, &QPushButton::clicked, this, &MainWindow::onScreenshot);
     connect(export_btn_, &QPushButton::clicked, this, &MainWindow::onExportResults);
+    connect(record_btn_, &QPushButton::clicked, this, &MainWindow::onRecordToggle);
     connect(conf_slider_, &QSlider::valueChanged, this, &MainWindow::onConfThresholdChanged);
     connect(nms_slider_, &QSlider::valueChanged, this, &MainWindow::onNmsThresholdChanged);
     connect(clear_log_btn_, &QPushButton::clicked, this, &MainWindow::onClearLog);
