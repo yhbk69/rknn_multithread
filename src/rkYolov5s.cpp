@@ -32,77 +32,53 @@ static void dump_tensor_attr(rknn_tensor_attr *attr)
 }
 
 /**
- * 从文件中读取指定偏移和大小的数据
- * @param fp 文件指针
- * @param ofst 偏移量
- * @param sz 读取字节数
- * @return 读取的数据指针，失败返回NULL
+ * 从文件读取数据块到 vector（RAII 自动释放内存）
+ * @param fp 已打开的文件指针
+ * @param ofst 文件偏移量
+ * @param sz 要读取的字节数
+ * @return 数据 vector，失败返回空 vector
  */
-static unsigned char *load_data(FILE *fp, size_t ofst, size_t sz)
+static std::vector<unsigned char> load_data(FILE *fp, size_t ofst, size_t sz)
 {
-    unsigned char *data;
-    int ret;
-
-    data = NULL;
-
     if (NULL == fp)
-    {
-        return NULL;
-    }
+        return {};
 
-    // 移动文件指针到指定偏移
-    ret = fseek(fp, ofst, SEEK_SET);
+    int ret = fseek(fp, ofst, SEEK_SET);
     if (ret != 0)
     {
         LOG_ERROR("[rkYolov5s]", "blob seek failure");
-        return NULL;
+        return {};
     }
 
-    // 分配内存并读取数据
-    data = (unsigned char *)malloc(sz);
-    if (data == NULL)
-    {
-        LOG_ERROR("[rkYolov5s]", "buffer malloc failure");
-        return NULL;
-    }
-    size_t read_bytes = fread(data, 1, sz, fp);
+    std::vector<unsigned char> data(sz);
+    size_t read_bytes = fread(data.data(), 1, sz, fp);
     if (read_bytes != sz)
     {
         LOG_ERROR("[rkYolov5s]", "blob read failure: expected %zu, got %zu", sz, read_bytes);
-        free(data);
-        return NULL;
+        return {};
     }
     return data;
 }
 
 /**
- * 加载整个模型文件到内存
+ * 加载整个模型文件到 vector（RAII 自动释放内存）
  * @param filename 模型文件路径
- * @param model_size 输出参数，模型文件大小
- * @return 模型数据指针，失败返回NULL
+ * @return 模型数据 vector，失败返回空 vector
  */
-static unsigned char *load_model(const char *filename, int *model_size)
+static std::vector<unsigned char> load_model(const char *filename)
 {
-    FILE *fp;
-    unsigned char *data;
-
-    fp = fopen(filename, "rb");
+    FILE *fp = fopen(filename, "rb");
     if (NULL == fp)
     {
         LOG_ERROR("[rkYolov5s]", "Open file %s failed", filename);
-        return NULL;
+        return {};
     }
 
-    // 获取文件大小
     fseek(fp, 0, SEEK_END);
     int size = ftell(fp);
 
-    // 读取整个模型文件
-    data = load_data(fp, 0, size);
-
+    auto data = load_data(fp, 0, size);
     fclose(fp);
-
-    *model_size = size;
     return data;
 }
 
@@ -185,10 +161,9 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
         return -1;
     }
 
-    // 从文件加载模型到内存
-    int model_data_size = 0;
-    model_data = load_model(model_path.c_str(), &model_data_size);
-    if (model_data == nullptr)
+    // 从文件加载模型到内存（RAII vector 自动管理）
+    model_data = load_model(model_path.c_str());
+    if (model_data.empty())
     {
         LOG_ERROR("[YOLOv5Engine]", "Failed to load model: %s", model_path.c_str());
         return -1;
@@ -199,13 +174,11 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     if (share_weight == true)
         ret = rknn_dup_context(ctx_in, &ctx);
     else
-        ret = ::rknn_init(&ctx, model_data, model_data_size, 0, NULL);
+        ret = ::rknn_init(&ctx, model_data.data(), model_data.size(), 0, NULL);
 
     if (ret < 0)
     {
         LOG_ERROR("[YOLOv5Engine]", "rknn_init error ret=%d", ret);
-        free(model_data);
-        model_data = nullptr;
         return -1;
     }
 
@@ -234,8 +207,6 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     if (ret < 0)
     {
         LOG_ERROR("[YOLOv5Engine]", "rknn_init core error ret=%d", ret);
-        free(model_data);
-        model_data = nullptr;
         return -1;
     }
 
@@ -245,8 +216,6 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     if (ret < 0)
     {
         LOG_ERROR("[YOLOv5Engine]", "rknn_init error ret=%d", ret);
-        free(model_data);
-        model_data = nullptr;
         return -1;
     }
     LOG_INFO("[YOLOv5Engine]", "sdk version: %s driver version: %s", version.api_version, version.drv_version);
@@ -256,8 +225,6 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     if (ret < 0)
     {
         LOG_ERROR("[YOLOv5Engine]", "rknn_init error ret=%d", ret);
-        free(model_data);
-        model_data = nullptr;
         return -1;
     }
     LOG_INFO("[YOLOv5Engine]", "model input num: %d, output num: %d", io_num.n_input, io_num.n_output);
@@ -271,8 +238,6 @@ int YOLOv5Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
         if (ret < 0)
         {
             LOG_ERROR("[YOLOv5Engine]", "rknn_init error ret=%d", ret);
-            free(model_data);
-            model_data = nullptr;
             return -1;
         }
         dump_tensor_attr(&(input_attrs[i]));
@@ -487,10 +452,6 @@ cv::Mat YOLOv5Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
  */
 YOLOv5Engine::~YOLOv5Engine()
 {
-    // post_ctx_ / input_attrs / output_attrs 自动 RAII 析构
-
-    ret = rknn_destroy(ctx);
-
-    if (model_data)
-        free(model_data);
+    // post_ctx_ / input_attrs / output_attrs / model_data 自动 RAII 析构
+    rknn_destroy(ctx);
 }

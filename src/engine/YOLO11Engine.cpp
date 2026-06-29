@@ -13,24 +13,22 @@
 // P2: 使用 RGA 硬件加速预处理
 #include "RgaAccelerator.hpp"
 
-/* ============ 辅助函数（与 rkYolov5s.cpp 共享） ============ */
+/* ============ 辅助函数 ============ */
 
-static unsigned char *load_model(const char *filename, int *model_size)
+static std::vector<unsigned char> load_model(const char *filename)
 {
     FILE *fp = fopen(filename, "rb");
     if (!fp) {
         LOG_ERROR("[YOLO11]", "Open file %s failed", filename);
-        return NULL;
+        return {};
     }
     fseek(fp, 0, SEEK_END);
     int size = ftell(fp);
-    unsigned char *data = (unsigned char *)malloc(size);
-    if (!data) { fclose(fp); return NULL; }
     fseek(fp, 0, SEEK_SET);
-    size_t read_bytes = fread(data, 1, size, fp);
+    std::vector<unsigned char> data(size);
+    size_t read_bytes = fread(data.data(), 1, size, fp);
     fclose(fp);
-    if (read_bytes != (size_t)size) { free(data); return NULL; }
-    *model_size = size;
+    if (read_bytes != (size_t)size) return {};
     return data;
 }
 
@@ -59,10 +57,9 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
         return -1;
     }
 
-    /* 加载模型 */
-    int model_data_size = 0;
-    model_data = load_model(model_path.c_str(), &model_data_size);
-    if (!model_data) {
+    /* 加载模型（RAII vector 自动管理） */
+    model_data = load_model(model_path.c_str());
+    if (model_data.empty()) {
         LOG_ERROR("[YOLO11]", "Failed to load model");
         return -1;
     }
@@ -71,11 +68,10 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     if (share_weight && ctx_in) {
         ret = rknn_dup_context(ctx_in, &ctx);
     } else {
-        ret = ::rknn_init(&ctx, model_data, model_data_size, 0, NULL);
+        ret = ::rknn_init(&ctx, model_data.data(), model_data.size(), 0, NULL);
     }
     if (ret < 0) {
         LOG_ERROR("[YOLO11]", "rknn_init failed ret=%d", ret);
-        free(model_data); model_data = nullptr;
         return -1;
     }
 
@@ -91,7 +87,6 @@ int YOLO11Engine::rknn_init(rknn_context *ctx_in, bool share_weight, int core_nu
     if (ret < 0) {
         LOG_ERROR("[YOLO11]", "rknn_set_core_mask failed ret=%d", ret);
         ::rknn_destroy(ctx);
-        free(model_data); model_data = nullptr;
         return -1;
     }
 
@@ -256,5 +251,5 @@ cv::Mat YOLO11Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
 YOLO11Engine::~YOLO11Engine()
 {
     ::rknn_destroy(ctx);
-    if (model_data) free(model_data);
+    // model_data (vector) 自动 RAII 析构
 }

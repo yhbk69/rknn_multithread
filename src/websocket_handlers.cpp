@@ -137,3 +137,31 @@ void WebSocket::handleSetFence(QWebSocket *client, const QJsonObject &json)
 
     emit fenceSet(fence.stream_id, fence);
 }
+
+void WebSocket::handleSetThreshold(QWebSocket *client, const QJsonObject &json)
+{
+    float conf = json["conf"].toDouble(-1.0f);
+    float nms = json["nms"].toDouble(-1.0f);
+
+    QJsonObject resp;
+    resp["type"] = "threshold_set";
+
+    // 参数校验：阈值范围 [0, 1]
+    if (conf < 0.0f || conf > 1.0f || nms < 0.0f || nms > 1.0f) {
+        resp["success"] = false;
+        resp["error"] = "Threshold values must be in [0, 1]";
+        client->sendTextMessage(QString::fromUtf8(
+            QJsonDocument(resp).toJson(QJsonDocument::Compact)));
+        return;
+    }
+
+    LOG_INFO("[WebSocket]", "Threshold set: conf=%.2f, nms=%.2f", conf, nms);
+
+    resp["success"] = true;
+    resp["conf"] = conf;
+    resp["nms"] = nms;
+    client->sendTextMessage(QString::fromUtf8(
+        QJsonDocument(resp).toJson(QJsonDocument::Compact)));
+
+    emit thresholdChanged(conf, nms);
+}

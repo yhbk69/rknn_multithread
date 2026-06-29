@@ -26,7 +26,7 @@ private:
     int ret;
     mutable std::mutex mtx;
     std::string model_path;
-    unsigned char *model_data = nullptr;
+    std::vector<unsigned char> model_data;  // RAII: 模型数据自动释放
 
     rknn_context ctx;
     rknn_input_output_num io_num;

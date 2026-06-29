@@ -111,6 +111,7 @@ private slots:
     // 配置热更新
     void onConfigFileChanged(const QString &path);
     void onRecordToggle();  // 录制按钮槽
+    void onRoiToggle();     // 围栏模式槽
 
 private:
     void log(const QString& category, const QString& message);
@@ -147,6 +148,7 @@ private:
     QPushButton* screenshot_btn_;
     QPushButton* export_btn_;
     QPushButton* record_btn_;       // 录制按钮
+    QPushButton* roi_btn_;          // 围栏按钮
     QSpinBox* thread_spin_;
     QSlider* conf_slider_;
     QSlider* nms_slider_;
@@ -193,6 +195,7 @@ private:
     QImage last_frames_[MAX_CHANNELS];
     long long last_stats_update_[MAX_CHANNELS] = {};  // 各通道上次统计更新时间（ms）
     std::shared_ptr<VideoRecorder> recorders_[MAX_CHANNELS];  // 各通道录制器
+    bool roi_mode_ = false;  // 围栏绘制模式
 
     // 检测结果历史（用于导出）
     struct ExportRecord {

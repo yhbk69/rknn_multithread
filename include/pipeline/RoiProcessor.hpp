@@ -33,10 +33,6 @@ public:
         const detect_result_group_t& src_detect,
         const std::vector<std::string>& roi_class_names,
         bool has_rois);
-
-    void restoreCoordinates(
-        detect_result_group_t& result,
-        int roi_x, int roi_y);
 };
 
 #endif // ROI_PROCESSOR_HPP

@@ -4,6 +4,7 @@
  */
 
 #include "rk/mainwindow.hpp"
+#include "pipeline/RoiDrawView.hpp"
 #include <QDateTime>
 #include <QGroupBox>
 #include <QFrame>
@@ -154,7 +155,7 @@ void MainWindow::setupUI() {
         top_layout->addWidget(cell.zoom_in_btn);
         top_layout->addWidget(cell.zoom_out_btn);
 
-        cell.view = new QGraphicsView(cell.container);
+        cell.view = new RoiDrawView(cell.container);
         cell.view->setRenderHint(QPainter::Antialiasing);
         cell.view->setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
         cell.view->setStyleSheet(
@@ -301,6 +302,9 @@ void MainWindow::setupUI() {
     record_btn_ = new QPushButton("录制", left_panel);
     record_btn_->setEnabled(false);
     record_btn_->setCheckable(true);
+    roi_btn_ = new QPushButton("围栏", left_panel);
+    roi_btn_->setEnabled(false);
+    roi_btn_->setCheckable(true);
 
     thread_spin_ = new QSpinBox(left_panel);
     thread_spin_->setRange(1, 8);
@@ -313,6 +317,7 @@ void MainWindow::setupUI() {
     btn_row->addWidget(screenshot_btn_);
     btn_row->addWidget(export_btn_);
     btn_row->addWidget(record_btn_);
+    btn_row->addWidget(roi_btn_);
     btn_row->addStretch();
     btn_row->addWidget(new QLabel("线程数:", left_panel));
     btn_row->addWidget(thread_spin_);
@@ -514,9 +519,45 @@ void MainWindow::setupUI() {
     connect(screenshot_btn_, &QPushButton::clicked, this, &MainWindow::onScreenshot);
     connect(export_btn_, &QPushButton::clicked, this, &MainWindow::onExportResults);
     connect(record_btn_, &QPushButton::clicked, this, &MainWindow::onRecordToggle);
+    connect(roi_btn_, &QPushButton::clicked, this, &MainWindow::onRoiToggle);
+
+    // 连接各通道 ROI 绘制回调
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        int ch = i;
+        RoiDrawView* roi_view = static_cast<RoiDrawView*>(video_cells_[i].view);
+        roi_view->setRoiDrawnCallback([this, ch](int x, int y, int w, int h) {
+            if (detect_threads_[ch]) {
+                detect_threads_[ch]->setRoi(QRect(x, y, w, h));
+                log("system", QString("通道%1 围栏已设置: (%2,%3) %4x%5").arg(ch + 1).arg(x).arg(y).arg(w).arg(h));
+            }
+        });
+        roi_view->setRoiClearedCallback([this, ch]() {
+            if (detect_threads_[ch]) {
+                detect_threads_[ch]->clearRoi();
+                log("system", QString("通道%1 围栏已清除").arg(ch + 1));
+            }
+        });
+    }
     connect(conf_slider_, &QSlider::valueChanged, this, &MainWindow::onConfThresholdChanged);
     connect(nms_slider_, &QSlider::valueChanged, this, &MainWindow::onNmsThresholdChanged);
     connect(clear_log_btn_, &QPushButton::clicked, this, &MainWindow::onClearLog);
+
+    // WebSocket 动态阈值设置
+    if (ws_server_) {
+        connect(ws_server_.get(), &WebSocket::thresholdChanged, this,
+            [this](float conf, float nms) {
+                conf_threshold_ = conf;
+                nms_threshold_ = nms;
+                conf_slider_->setValue((int)(conf * 100));
+                nms_slider_->setValue((int)(nms * 100));
+                for (int i = 0; i < MAX_CHANNELS; i++) {
+                    if (detect_threads_[i])
+                        detect_threads_[i]->setThresholds(conf, nms);
+                }
+                log("system", QString("阈值已通过 WebSocket 更新: conf=%1, nms=%2")
+                    .arg(conf, 0, 'f', 2).arg(nms, 0, 'f', 2));
+            });
+    }
 
     // 从标签文件加载所有类别名，初始化检测统计网格
     initStatsGrid();

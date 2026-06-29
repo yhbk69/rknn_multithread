@@ -9,7 +9,7 @@
 #define CONFIG_H
 
 /* 后处理相关常量 */
-#define OBJ_NAME_MAX_SIZE 16        // 目标类别名称的最大长度（字节）
+#define OBJ_NAME_MAX_SIZE 32        // 目标类别名称的最大长度（字节）
 #define OBJ_NUMB_MAX_SIZE 64        // 单帧最多可检测到的目标数量上限
 #define OBJ_CLASS_NUM 80            // 目标类别总数（COCO 数据集共 80 类）
 #define PROP_BOX_SIZE (5 + OBJ_CLASS_NUM)  // 每个检测框的属性数量

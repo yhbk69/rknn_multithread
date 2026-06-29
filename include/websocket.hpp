@@ -202,6 +202,9 @@ signals:
     /* 收到围栏设置 */
     void fenceSet(const QString &streamId, const FenceRegion &fence);
 
+    /* 收到阈值设置 */
+    void thresholdChanged(float conf, float nms);
+
     /* 服务器关闭完成 */
     void closed();
 
@@ -223,6 +226,7 @@ private:
     void handleGetStats(QWebSocket *client);
     void handleSwitchModel(QWebSocket *client, const QJsonObject &json);
     void handleGetModels(QWebSocket *client);
+    void handleSetThreshold(QWebSocket *client, const QJsonObject &json);
 
     /* 工具 */
     QString generateAlarmId();

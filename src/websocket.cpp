@@ -267,6 +267,8 @@ void WebSocket::dispatchMessage(QWebSocket *client, const QJsonObject &json)
         handleSwitchModel(client, json);
     else if (type == "get_models")
         handleGetModels(client);
+    else if (type == "set_threshold")
+        handleSetThreshold(client, json);
     else
     {
         QJsonObject err;

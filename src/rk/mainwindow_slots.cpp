@@ -165,6 +165,7 @@ void MainWindow::onStartDetection() {
 
     enableControls(true);
     record_btn_->setEnabled(true);
+    roi_btn_->setEnabled(true);
     model_status_label_->setText("运行中");
     model_status_label_->setStyleSheet("color: #ffb74d; font-weight: bold;");
     model_status_left_label_->setText("运行中");
@@ -298,6 +299,11 @@ void MainWindow::onDetectFinished(int ch) {
             onRecordToggle();
         }
         record_btn_->setEnabled(false);
+        roi_btn_->setEnabled(false);
+        if (roi_mode_) {
+            roi_btn_->setChecked(false);
+            onRoiToggle();
+        }
         model_status_label_->setText("已完成");
         model_status_label_->setStyleSheet("color: #8a9bb0; font-weight: bold;");
         model_status_left_label_->setText("已选择");
@@ -563,5 +569,34 @@ void MainWindow::onRecordToggle() {
         }
         record_btn_->setText("录制");
         record_btn_->setStyleSheet("");
+    }
+}
+
+// ============================================================
+// ROI 围栏绘制模式
+// ============================================================
+
+void MainWindow::onRoiToggle() {
+    roi_mode_ = roi_btn_->isChecked();
+
+    // 设置鼠标样式：绘制模式下显示十字光标
+    Qt::CursorShape cursor = roi_mode_ ? Qt::CrossCursor : Qt::ArrowCursor;
+
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (video_cells_[i].view) {
+            video_cells_[i].view->setCursor(cursor);
+            // 启用/禁用视图的交互（绘制模式下禁用滚动）
+            video_cells_[i].view->setDragMode(roi_mode_ ? QGraphicsView::NoDrag : QGraphicsView::ScrollHandDrag);
+        }
+    }
+
+    if (roi_mode_) {
+        roi_btn_->setText("停止围栏");
+        roi_btn_->setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold;");
+        log("system", "围栏绘制模式已开启，在视频上拖拽绘制矩形");
+    } else {
+        roi_btn_->setText("围栏");
+        roi_btn_->setStyleSheet("");
+        log("system", "围栏绘制模式已关闭");
     }
 }

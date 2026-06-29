@@ -1,3 +1,13 @@
+/*
+ * VideoCell.hpp - 视频显示单元
+ *
+ * 封装四路视频网格中的单个通道：
+ *   - QGraphicsView + QGraphicsScene 用于显示帧
+ *   - QLabel 覆盖层显示 FPS
+ *   - QPushButton 放大/缩小
+ *   - QGraphicsRectItem ROI 围栏叠加层
+ */
+
 #ifndef VIDEO_CELL_HPP
 #define VIDEO_CELL_HPP
 
@@ -5,6 +15,7 @@
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
+#include <QGraphicsRectItem>
 #include <QLabel>
 #include <QPushButton>
 #include <QImage>
@@ -15,6 +26,7 @@ struct VideoCell {
     QGraphicsView* view = nullptr;
     QGraphicsScene* scene = nullptr;
     QGraphicsPixmapItem* pixmap_item = nullptr;
+    QGraphicsRectItem* roi_item = nullptr;       // ROI 围栏叠加层
     QLabel* overlay = nullptr;
     QPushButton* zoom_in_btn = nullptr;
     QPushButton* zoom_out_btn = nullptr;

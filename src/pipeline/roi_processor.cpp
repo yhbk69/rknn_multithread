@@ -83,15 +83,3 @@ detect_result_group_t RoiProcessor::mergeResults(
 
     return merged;
 }
-
-void RoiProcessor::restoreCoordinates(
-    detect_result_group_t& result,
-    int roi_x, int roi_y)
-{
-    for (int i = 0; i < result.count; i++) {
-        result.results[i].box.left += roi_x;
-        result.results[i].box.right += roi_x;
-        result.results[i].box.top += roi_y;
-        result.results[i].box.bottom += roi_y;
-    }
-}
