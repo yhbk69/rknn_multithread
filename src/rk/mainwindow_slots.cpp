@@ -225,14 +225,15 @@ void MainWindow::onPollFrames() {
         if (!frame_queues_[ch].pop(e)) continue;
         if (e.bgr_frame.empty()) continue;
 
-        /* BGR→RGB 转换 + QImage 深拷贝 */
+        /* BGR→RGB 转换 + QImage 构造（单次分配） */
         cv::Mat rgb;
         cv::cvtColor(e.bgr_frame, rgb, cv::COLOR_BGR2RGB);
         if (rgb.empty()) continue;
 
-        QImage qimg(rgb.data, rgb.cols, rgb.rows,
-                    static_cast<int>(rgb.step), QImage::Format_RGB888);
-        QImage owned = qimg.copy(); /* 深拷贝，确保数据独立于 cv::Mat */
+        /* 直接从 rgb 数据构造 QImage，.copy() 确保数据独立 */
+        QImage owned(rgb.data, rgb.cols, rgb.rows,
+                     static_cast<int>(rgb.step), QImage::Format_RGB888);
+        owned = owned.copy();  /* 深拷贝，确保数据独立于 cv::Mat */
 
         last_frames_[ch] = owned;
 

@@ -43,7 +43,7 @@ void DetectThread::run() {
         if (!running_.load()) break;
 
         cv::Mat img;
-        if (!reader.read(img)) {
+        if (!reader.readLatest(img)) {
             emit error(QString("[Ch%1] Failed to read frame").arg(channel_id_));
             break;
         }

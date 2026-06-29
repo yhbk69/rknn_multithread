@@ -1,3 +1,15 @@
+/*
+ * FrameQueue.hpp - 帧队列（SPSC 优化）
+ *
+ * 单生产者/单消费者队列，用于 DetectThread → GUI 线程的帧传递。
+ * 优化：使用 cv::Mat 移动语义避免深拷贝。
+ *
+ * 特点：
+ *   - 容量限制 8 帧，超容丢弃最旧帧
+ *   - 线程安全（mutex + condition_variable）
+ *   - move 语义减少内存拷贝
+ */
+
 #ifndef FRAME_QUEUE_HPP
 #define FRAME_QUEUE_HPP
 
@@ -14,19 +26,19 @@ struct FrameQueue {
     };
     std::queue<Entry> q;
     mutable std::mutex mtx;
-    std::condition_variable cv;
 
-    void push(int ch, const cv::Mat& frame, double fps) {
+    // 生产者：移动帧数据，避免 clone()
+    void push(int ch, cv::Mat frame, double fps) {
         {
             std::lock_guard<std::mutex> lk(mtx);
-            if (q.size() >= 8) q.pop();
-            q.push({ch, frame.clone(), fps});
+            if (q.size() >= 8) q.pop();  // 丢弃最旧帧
+            q.push({ch, std::move(frame), fps});
         }
-        cv.notify_one();
     }
 
+    // 消费者：移动取出
     bool pop(Entry& e) {
-        std::unique_lock<std::mutex> lk(mtx);
+        std::lock_guard<std::mutex> lk(mtx);
         if (q.empty()) return false;
         e = std::move(q.front());
         q.pop();
