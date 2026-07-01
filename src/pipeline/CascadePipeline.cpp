@@ -211,3 +211,9 @@ void CascadePipeline::set_thresholds(float conf, float nms)
     for (auto &s : stages_)
         s->setThresholds(conf, nms);
 }
+
+int CascadePipeline::pendingCount() const
+{
+    if (stages_.empty()) return 0;
+    return stages_[0]->pendingCount();
+}

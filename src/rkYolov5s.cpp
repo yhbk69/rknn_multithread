@@ -307,8 +307,9 @@ rknn_context *YOLOv5Engine::get_pctx()
 /**
  * P2-3: 三级流水线 - Stage P (CPU + RGA)
  * BGR→RGB 转换 + letterbox 缩放填充（RGA 硬件加速）
+ * 优化：减少中间 Mat 拷贝，使用 move 语义
  */
-static void stage_preprocess(cv::Mat &orig_img, YOLOv5Engine::PipelineData &data, int model_w, int model_h)
+static void stage_preprocess(const cv::Mat &orig_img, YOLOv5Engine::PipelineData &data, int model_w, int model_h)
 {
     int img_w = orig_img.cols;
     int img_h = orig_img.rows;
@@ -362,16 +363,11 @@ cv::Mat YOLOv5Engine::infer(cv::Mat &orig_img, detect_result_group_t *out_group)
         nms = nms_threshold;
     }
 
-    // P2-3: Stage P (CPU) — 预处理通过 std::async 异步执行，
-    // 当多实例并发推理时，本实例的预处理可与另一实例的 NPU 推理重叠
+    // Stage P (CPU) — 预处理（栈上分配，线程安全）
     PipelineData data;
-    std::future<void> stage_p = std::async(std::launch::async, [&]() {
-        stage_preprocess(orig_img, data, width, height);
-    });
+    stage_preprocess(orig_img, data, width, height);
 
-    // P2-3: Stage I (NPU) — 等待 Stage P 完成后设置输入并执行 NPU 推理
-    stage_p.wait();
-
+    // Stage I (NPU) — 推理
     inputs[0].buf = data.padded_img.empty() ? data.rgb_img.data : data.padded_img.data;
 
     ret = rknn_inputs_set(ctx, io_num.n_input, inputs);

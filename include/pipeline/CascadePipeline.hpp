@@ -61,6 +61,9 @@ public:
     cv::Mat getLastFrame() const { return last_frame_; }
     bool isCascade() const { return is_cascade_; }
 
+    /* 获取 Stage 0 队列中的待处理帧数（用于跳帧决策） */
+    int pendingCount() const;
+
 private:
     bool is_cascade_ = false;
     cv::Mat last_frame_;
@@ -85,6 +88,7 @@ private:
         virtual int get(cv::Mat &output) = 0;
         virtual detect_result_group_t getLastDetectResult() const = 0;
         virtual void setThresholds(float conf, float nms) = 0;
+        virtual int pendingCount() const = 0;
     };
 
     /* 具体 typed stage：包裹 rknnPool */
@@ -105,6 +109,9 @@ private:
 
         void setThresholds(float c, float n) override {
             pool.set_thresholds(c, n);
+        }
+        int pendingCount() const override {
+            return pool.pendingCount();
         }
     };
 

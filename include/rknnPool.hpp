@@ -89,6 +89,9 @@ public:
     /* P2-2: 获取各实例的平均推理时间（用于监控/调试） */
     std::vector<double> getAvgLatencies() const;
 
+    /* 获取待处理任务数（用于跳帧决策） */
+    int pendingCount() const { return (int)task_queue_.size_approx(); }
+
     /* 析构函数：等待所有剩余推理任务完成后释放资源 */
     ~rknnPool();
 };

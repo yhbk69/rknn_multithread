@@ -62,6 +62,7 @@ public:
     int channelId() const { return channel_id_; }
     void setFrameQueue(FrameQueue* q) { frame_queue_ = q; }
     void setRecorder(VideoRecorder* rec) { recorder_ = rec; }
+    void setSkipFrames(bool skip) { skip_frames_ = skip; }
 
 signals:
     void statsUpdated(int framesProcessed, double avgFps, double inferenceTime);
@@ -69,6 +70,7 @@ signals:
     void error(const QString& msg);
     void detectionBatch(int frameId, const QVector<FrameDetections::Det>& dets);
     void statsPanelUpdated(long long totalAlarms, const QString& classStatsJson);
+    void frameDropped(int channel, int totalDropped);
 
 protected:
     void run() override;
@@ -93,6 +95,8 @@ private:
     std::map<std::string, long long> class_counts_;
     std::map<std::string, long long> alarm_counts_;
     VideoRecorder* recorder_ = nullptr;  // 视频录制器（可选）
+    bool skip_frames_ = false;  // 跳帧模式：流水线忙时丢弃新帧
+    int dropped_frames_ = 0;    // 已丢弃帧数
 };
 
 #endif // DETECT_THREAD_HPP

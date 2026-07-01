@@ -136,6 +136,7 @@ void MainWindow::onStartDetection() {
         std::string video_path = video_text.toStdString();
         detect_threads_[i] = new DetectThread(i, model_path_, video_path, thread_num, conf_threshold_, nms_threshold_);
         detect_threads_[i]->setWebSocket(ws_server_);
+        // skip_frames 默认关闭，仅在 RTSP 低延迟场景手动启用
 
         int ch = i;
         /* 设置共享帧队列，工作线程直接写入 */
@@ -155,6 +156,10 @@ void MainWindow::onStartDetection() {
         connect(detect_threads_[i], &DetectThread::statsPanelUpdated, this,
             [this, ch](long long totalAlarms, const QString& classStatsJson) {
                 onStatsPanelUpdated(ch, totalAlarms, classStatsJson);
+            });
+        connect(detect_threads_[i], &DetectThread::frameDropped, this,
+            [this](int ch, int total) {
+                log("system", QString("通道%1 已丢弃 %2 帧（流水线忙）").arg(ch + 1).arg(total));
             });
 
         detect_threads_[i]->start();

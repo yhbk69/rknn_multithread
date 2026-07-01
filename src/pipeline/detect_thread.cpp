@@ -50,6 +50,14 @@ void DetectThread::run() {
 
         long long infer_start = stats.elapsedMs();
 
+        /* 跳帧策略：仅在队列严重积压时丢帧（阈值=队列容量的75%） */
+        if (skip_frames_ && frames >= thread_num_ && pipeline->pendingCount() >= 12) {
+            dropped_frames_++;
+            if (dropped_frames_ % 30 == 0)
+                emit frameDropped(channel_id_, dropped_frames_);
+            continue;
+        }
+
         int roi_x = 0, roi_y = 0;
         cv::Mat detect_img;
         if (roi_enabled_ && !roi_rect_.isNull()) {
@@ -58,7 +66,8 @@ void DetectThread::run() {
             int x2 = qBound(x1 + 1, roi_rect_.x() + roi_rect_.width(), img.cols);
             int y2 = qBound(y1 + 1, roi_rect_.y() + roi_rect_.height(), img.rows);
             roi_x = x1; roi_y = y1;
-            detect_img = img(cv::Range(y1, y2), cv::Range(x1, x2)).clone();
+            // 使用 ROI 子矩阵直接引用（不 clone），推理时内部会处理
+            detect_img = img(cv::Range(y1, y2), cv::Range(x1, x2));
         } else {
             detect_img = img;
         }
