@@ -1,6 +1,21 @@
+/*
+ * mainwindow_style.cpp - Qt 样式表定义
+ *
+ * 定义整个应用的深色主题样式：
+ *   - 背景色：#0a0a0a（纯黑）
+ *   - 文字色：#e8e8e8（浅灰）
+ *   - 强调色：#3498db（蓝色）
+ *   - 按钮：深色背景 + 圆角
+ *   - 输入框：深色背景 + 蓝色边框聚焦
+ */
+
 #include "rk/mainwindow.hpp"
 #include <QApplication>
 
+/**
+ * 设置应用全局样式
+ * 使用 Qt StyleSheet（类似 CSS）定义所有控件的外观
+ */
 void MainWindow::setupStyle() {
     qApp->setStyleSheet(R"(
         QMainWindow, QWidget {
