@@ -108,17 +108,22 @@ void DetectThread::run() {
         // 如果启用了 ROI（围栏），只检测 ROI 区域内的目标
         int roi_x = 0, roi_y = 0;
         cv::Mat detect_img;
-        if (roi_enabled_ && !roi_rect_.isNull()) {
+        if (roi_enabled_ && !roi_rect_.isNull() && img.rows > 0 && img.cols > 0) {
             // 将 ROI 矩形裁剪到图像范围内（防止越界）
             int x1 = qBound(0, roi_rect_.x(), img.cols - 1);
             int y1 = qBound(0, roi_rect_.y(), img.rows - 1);
             int x2 = qBound(x1 + 1, roi_rect_.x() + roi_rect_.width(), img.cols);
             int y2 = qBound(y1 + 1, roi_rect_.y() + roi_rect_.height(), img.rows);
-            roi_x = x1; roi_y = y1;
 
-            // 提取 ROI 子矩阵（不 clone，直接引用原图内存，零拷贝）
-            // 注意：推理时内部会处理格式转换，不会修改原图
-            detect_img = img(cv::Range(y1, y2), cv::Range(x1, x2));
+            // 检查裁剪后的 ROI 是否有效（宽高必须 > 0）
+            if (x2 <= x1 || y2 <= y1) {
+                detect_img = img;
+                roi_enabled_ = false;  // ROI 无效，自动禁用
+            } else {
+                roi_x = x1; roi_y = y1;
+                // 提取 ROI 子矩阵（零拷贝，直接引用原图内存）
+                detect_img = img(cv::Range(y1, y2), cv::Range(x1, x2));
+            }
         } else {
             // 无 ROI，使用全图
             detect_img = img;
@@ -149,9 +154,6 @@ void DetectThread::run() {
                     result.results[i].box.top += roi_y;
                     result.results[i].box.bottom += roi_y;
                 }
-                // 将 ROI 区域的检测结果复制回原图对应位置
-                detect_img.copyTo(img(cv::Range(roi_y, roi_y + detect_img.rows),
-                                      cv::Range(roi_x, roi_x + detect_img.cols)));
             }
 
             // --- WebSocket 报警处理 ---
